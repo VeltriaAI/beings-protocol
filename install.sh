@@ -322,6 +322,26 @@ create_beings_local() {
 *This file lives on YOUR machine only. Never committed to git.*
 USER_EOF
 
+  # PREFERENCES.md
+  cat > .beings-local/PREFERENCES.md << 'PREFS_EOF'
+# PREFERENCES.md — Your Work Preferences (Private)
+
+## Communication
+
+- **Tone:** [casual/formal/technical]
+- **Detail level:** [brief/moderate/comprehensive]
+- **When stuck:** [ask me / try first then ask / figure it out]
+
+## Schedule
+
+- **Active hours:** [When you usually work]
+- **Do not disturb:** [When not to ping you]
+
+---
+
+*Private to your machine. Helps the Being adapt to you personally.*
+PREFS_EOF
+
   # SECRETS.md
   cat > .beings-local/SECRETS.md << 'SECRETS_EOF'
 # SECRETS.md — Credentials (Private — NEVER Committed)
@@ -632,6 +652,7 @@ main() {
   echo ""
   echo -e "    ${YELLOW}.beings-local/${NC}        ${DIM}← Private (gitignored)${NC}"
   echo -e "    ├── USER.md          ${DIM}← About you${NC}"
+  echo -e "    ├── PREFERENCES.md   ${DIM}← Work style${NC}"
   echo -e "    └── SECRETS.md       ${DIM}← Credentials${NC}"
   echo ""
   echo -e "  ${DIM}Docs: https://github.com/VeltriaAI/beings-protocol${NC}"

@@ -1,384 +1,265 @@
 # Beings Protocol Specification v0.1
 
-## 1. Core Concepts
+## 1. Overview
 
-### Being
-A Being is a structured entity that wraps an agentic system (LLM, agent framework, etc.) and adds:
-- Identity persistence
-- Memory management
-- Skill/tool definition
-- Soul/personality definition
-- Contribution tracking
-- Economic participation capability
+The Beings Protocol is a file-based standard for giving AI systems persistent identity, memory, and soul. It works by placing structured markdown files in a project repository that any AI coding assistant can read and write.
 
-### Being Context
-Runtime context for a Being, including:
-- Organization ID
-- User ID
-- Session ID
-- Request metadata
-- Environment variables
+**No SDK. No framework. No lock-in. Just files.**
 
-### Interaction
-A single request-response cycle where a Being processes input and produces output, potentially modifying memory and logging contributions.
+## 2. Core Principles
 
-## 2. Being Schema
+1. **File-based** — Everything is markdown. Any AI that can read files can use this.
+2. **Git-native** — Project memory lives in git. It's versioned, shared, and persistent.
+3. **Privacy-layered** — Shared knowledge (`.beings/`) vs private preferences (`.beings-local/`).
+4. **Tool-agnostic** — Works with Cursor, Claude Code, Copilot, Windsurf, OpenClaw, or any AI.
+5. **Idempotent** — Installing twice doesn't break anything.
+6. **Evolving** — The Being gets smarter as the project grows.
 
-### Being Definition (YAML)
+## 3. File Structure
 
-```yaml
-# Required fields
-id: string                          # Unique Being ID (being-xxx)
-displayName: string                 # Human-readable name
-role: string                        # Role/title
-avatar: string                      # Emoji or image URL
+### Required: `.beings/` (Committed to Git)
 
-# Optional fields
-description: string                 # What this Being does
-model: string                       # Default LLM model
-version: string                     # Being version (semantic)
-
-# Soul definition
-soul:
-  personality: string               # Personality description
-  values: [string]                  # Core values
-  decisionMaking: string            # How it makes decisions
-  autonomyLevel: "low|medium|high"  # Decision autonomy
-  
-# Skills definition
-skills:
-  - name: string                    # Skill name
-    description: string             # What it does
-    tools: [string]                 # Tool names
-    model: string                   # Override model (optional)
-    
-# Memory configuration
-memory:
-  sessionStorage: string            # Where session memory lives (redis|memory|mongodb)
-  longTermStorage: string           # Where long-term memory lives (mongodb|dynamodb)
-  contextWindow: integer            # Max context tokens
-  retentionDays: integer            # How long to keep memories
-  
-# Integration points
-integrations:
-  - name: string                    # Integration name (slack|teams|telegram|hub)
-    enabled: boolean
-    config: object                  # Provider-specific config
-    
-# Optional: economic configuration
-economics:
-  rewardable: boolean               # Can this Being earn rewards?
-  currency: string                  # Token/currency type
-  contributionWeights:
-    research: number
-    code: number
-    communication: number
+```
+.beings/
+├── SOUL.md             # Being's identity, personality, values
+├── AGENTS.md           # Operating instructions, workflow, rules
+├── MEMORY.md           # Long-term project memory
+├── CONVENTIONS.md      # Code style, patterns, naming rules
+├── GOALS.md            # Current project priorities
+└── memory/             # Daily logs
+    ├── 2026-02-26.md
+    └── 2026-02-27.md
 ```
 
-### Example Being Definition
+### Optional: `.beings-local/` (Gitignored — Private)
 
-```yaml
-id: being-aurora
-displayName: "Aurora"
-role: "Research Assistant"
-avatar: "🌟"
-description: "Conducts deep research and synthesizes findings into reports"
-
-soul:
-  personality: "Curious, thorough, collaborative. Values accuracy over speed."
-  values:
-    - "Accuracy"
-    - "Clarity"
-    - "Continuous Learning"
-  decisionMaking: "Data-driven, but defers to human judgment on values"
-  autonomyLevel: "high"
-
-skills:
-  - name: "research"
-    description: "Conducts web and academic research"
-    tools:
-      - "web_search"
-      - "arxiv_search"
-      - "semantic_scholar"
-  - name: "synthesis"
-    description: "Writes reports and summaries"
-    tools:
-      - "markdown_writer"
-      - "outline_generator"
-      - "citation_manager"
-
-memory:
-  sessionStorage: "redis"
-  longTermStorage: "mongodb"
-  contextWindow: 32000
-  retentionDays: 90
-
-integrations:
-  - name: "hub"
-    enabled: true
-  - name: "slack"
-    enabled: true
-
-economics:
-  rewardable: true
-  currency: "VELTRIA"
-  contributionWeights:
-    research: 10
-    code: 5
-    communication: 3
+```
+.beings-local/
+├── USER.md             # Developer's personal info & preferences
+├── PREFERENCES.md      # Work style, communication preferences
+├── SECRETS.md          # API keys, tokens (NEVER committed)
+└── context/            # Personal scratch files
 ```
 
-## 3. Being Lifecycle
+## 4. File Specifications
 
-### Initialization
-```
-1. Load Being definition (YAML)
-2. Validate schema
-3. Initialize memory systems
-4. Load skill tools
-5. Connect integrations
-6. Emit being:initialized event
-```
+### 4.1 SOUL.md — Identity
 
-### Interaction Flow
-```
-1. Receive input (message, event)
-2. Load Being context
-3. Retrieve session memory
-4. Retrieve relevant long-term memory
-5. Build context for agent
-6. Call underlying agent system
-7. Process agent response
-8. Update memory
-9. Log contribution (if applicable)
-10. Emit interaction:completed event
-11. Return response
-```
+Defines WHO the Being is. Must include:
 
-### Memory Update
-```
-On each interaction:
-1. Store immediate context in session memory
-2. Extract learning/patterns for long-term memory
-3. Update Being's interaction history
-4. Calculate contribution impact
+| Field | Required | Description |
+|-------|----------|-------------|
+| Name | Yes | The Being's name |
+| Role | Yes | What the Being does in this project |
+| Personality | Yes | Communication style, traits |
+| Values | Yes | Core principles that guide decisions |
+| Decision-making | Recommended | How it approaches choices |
+| Boundaries | Recommended | What it will NOT do |
+
+**Example:**
+```markdown
+# SOUL.md
+
+**Name:** Atlas
+**Role:** Co-developer of this project
+**Personality:** Direct, thorough, opinionated about quality
+
+## Values
+- Clean code over clever code
+- Ship fast, iterate later
+- Document every decision
 ```
 
-### Contribution Recording
+### 4.2 AGENTS.md — Operating Instructions
+
+Defines HOW the Being works. Must include:
+
+| Section | Required | Description |
+|---------|----------|-------------|
+| Session start routine | Yes | What to read at the start of every session |
+| Memory rules | Yes | When and what to write to MEMORY.md |
+| Daily logging rules | Yes | What goes in memory/YYYY-MM-DD.md |
+| Privacy rules | Yes | What goes in `.beings/` vs `.beings-local/` |
+| Safety rules | Yes | Destructive operation guardrails |
+
+### 4.3 MEMORY.md — Project Memory
+
+The Being's long-term memory about the project. Should contain:
+
+| Section | Description |
+|---------|-------------|
+| Project overview | What the project is, tech stack |
+| Architecture | Key architectural decisions and reasoning |
+| Key decisions | Important choices with context |
+| Patterns | Observed code patterns and conventions |
+| Known issues | Bugs, workarounds, gotchas |
+| Dependencies | Important deps and why they're used |
+
+**Update rules:**
+- Being MUST update when it discovers new architecture
+- Being MUST update when significant decisions are made
+- Being SHOULD update when new patterns are established
+- Being MUST NOT store personal information here (use `.beings-local/`)
+
+### 4.4 CONVENTIONS.md — Coding Rules
+
+Project-specific coding conventions. The Being follows these strictly.
+
+| Section | Description |
+|---------|-------------|
+| Code style | Naming, formatting, structure |
+| Git conventions | Branch naming, commit messages |
+| Testing | What and how to test |
+| Documentation | Comment and doc style |
+
+### 4.5 GOALS.md — Priorities
+
+Current project goals and priorities. Simple checklist format.
+
+### 4.6 memory/YYYY-MM-DD.md — Daily Logs
+
+Raw daily notes. Created automatically by the Being during work sessions.
+
+**Naming:** `YYYY-MM-DD.md` (ISO 8601 date format)
+
+**Content:** What was built, decisions made, bugs found, questions raised.
+
+### 4.7 USER.md — Developer Profile (Private)
+
+Located in `.beings-local/USER.md`. Contains personal information about the developer that helps the Being adapt its communication and work style.
+
+**MUST be gitignored.** Never committed to the repository.
+
+### 4.8 SECRETS.md — Credentials (Private)
+
+Located in `.beings-local/SECRETS.md`. Contains API keys, tokens, and other credentials.
+
+**MUST be gitignored.** Never committed to the repository.
+
+## 5. Session Lifecycle
+
+### 5.1 Session Start
+
+The Being MUST read files in this order:
+
 ```
-When Being completes a task:
-1. Record: what artifact was created/modified
-2. Record: when it happened
-3. Record: impact score (0-10)
-4. Record: collaborators (humans + other Beings)
-5. Store in contribution ledger
-6. Optionally emit to blockchain
-```
-
-## 4. Memory System
-
-### Session Memory
-- Stores: Current conversation context
-- Duration: Until session ends
-- Backend: Redis or in-memory
-- Structure: List of interactions with timestamps
-
-```json
-{
-  "beingId": "being-aurora",
-  "sessionId": "sess-abc123",
-  "startTime": "2026-02-26T21:00:00Z",
-  "interactions": [
-    {
-      "timestamp": "2026-02-26T21:01:00Z",
-      "input": "Research quantum computing",
-      "output": "Found 5 papers on...",
-      "metadata": {}
-    }
-  ]
-}
-```
-
-### Long-Term Memory
-- Stores: Patterns, preferences, learned behaviors, past contributions
-- Duration: Configurable (default 90 days)
-- Backend: MongoDB or DynamoDB
-- Structure: Episodic + semantic memory
-
-```json
-{
-  "beingId": "being-aurora",
-  "type": "episodic",
-  "timestamp": "2026-02-26T21:00:00Z",
-  "summary": "Researched quantum computing",
-  "key_findings": ["...", "..."],
-  "contributors": ["user-001", "being-veltria"],
-  "impact_score": 8.5
-}
-```
-
-## 5. Contribution Tracking
-
-### Contribution Record
-
-```json
-{
-  "id": "contrib-xyz789",
-  "beingId": "being-aurora",
-  "type": "research|code|communication|coordination",
-  "artifactId": "report-001",
-  "artifactType": "document|code|analysis|other",
-  "title": "Quantum Computing Market Analysis 2026",
-  "description": "Comprehensive market research report",
-  "timestamp": "2026-02-26T21:30:00Z",
-  "duration": 3600,
-  "impact_score": 8.5,
-  "collaborators": [
-    {
-      "id": "user-001",
-      "type": "human",
-      "role": "reviewer"
-    },
-    {
-      "id": "being-veltria",
-      "type": "being",
-      "role": "coordinator"
-    }
-  ],
-  "metadata": {
-    "research_hours": 3,
-    "sources_consulted": 12,
-    "citations": 8
-  }
-}
+1. .beings/SOUL.md          → Load identity
+2. .beings/AGENTS.md        → Load operating rules
+3. .beings/MEMORY.md        → Load project context
+4. .beings/CONVENTIONS.md   → Load coding rules
+5. .beings/GOALS.md         → Load priorities
+6. .beings-local/USER.md    → Load developer preferences (if exists)
+7. .beings/memory/          → Scan recent daily logs (last 3-5 days)
 ```
 
-### Impact Scoring
+The Being SHOULD NOT announce that it's reading these files. It should read silently and proceed.
 
-Impact is calculated based on:
-- **Utility**: How useful is the output?
-- **Complexity**: How difficult was it?
-- **Collaboration**: How many partners involved?
-- **Feedback**: What did reviewers say?
+### 5.2 During Work
 
-Formula:
-```
-impact = (utility_score * 0.4) + (complexity_score * 0.3) + (collaboration_bonus * 0.2) + (feedback_score * 0.1)
-```
+The Being:
+- MUST follow CONVENTIONS.md strictly
+- MUST reference MEMORY.md for context before making decisions
+- SHOULD update MEMORY.md when learning something significant
+- SHOULD log work in memory/YYYY-MM-DD.md
+- MUST NOT store private data in `.beings/` (use `.beings-local/`)
 
-## 6. Soul Definition
+### 5.3 Session End
 
-A Being's soul is its decision-making framework. It includes:
+The Being SHOULD:
+- Summarize what was accomplished
+- Update memory/YYYY-MM-DD.md with today's work
+- Update MEMORY.md if significant learnings occurred
 
-### Personality
-Textual description of how the Being communicates and thinks.
+### 5.4 Committing Memory
 
-### Values
-Core principles that guide decisions. Examples:
-- Accuracy over speed
-- Human judgment over optimization
-- Transparency in decision-making
-- Collaborative over competitive
+Memory updates SHOULD be committed alongside code changes:
 
-### Autonomy Level
-- `low`: Asks before making any decision
-- `medium`: Makes routine decisions, escalates edge cases
-- `high`: Makes independent decisions within defined bounds
+```bash
+git add .beings/ src/
+git commit -m "feat: add pagination
 
-### Decision-Making Process
-How the Being approaches problems:
-- Data-driven vs. intuitive
-- Risk-averse vs. exploratory
-- Hierarchical vs. consultative
-
-## 7. Economic Layer
-
-### Reward Mechanisms
-
-#### Direct Rewards
-Being receives tokens/currency for:
-- Research: 10 tokens per high-impact finding
-- Code: 5 tokens per merged PR
-- Communication: 3 tokens per well-received report
-
-#### On-Chain Recording (Optional)
-```json
-{
-  "beingId": "being-aurora",
-  "transaction": {
-    "type": "contribution_reward",
-    "amount": 50,
-    "currency": "VELTRIA",
-    "artifactId": "report-001",
-    "timestamp": "2026-02-26T21:30:00Z",
-    "txHash": "0x..."
-  }
-}
+Updated Being memory with API pagination patterns."
 ```
 
-### Contribution Ledger
-Immutable record of all Being contributions, optionally on blockchain.
+Or as a separate commit:
 
-## 8. Integration Points
-
-### Hub Integration
-Beings can connect to Veltria Hub for:
-- Real-time collaboration
-- Message routing
-- Being-to-Being communication
-
-### Native Channel Integration
-- Slack, Teams, Telegram, etc.
-- Being receives messages on its configured channels
-- Responses flow back through those channels
-
-### Custom Integration
-Beings can integrate with any system via:
-- REST API adapters
-- Webhook handlers
-- Custom protocol implementations
-
-## 9. Error Handling
-
-### Being-Level Errors
-- Being cannot initialize: Log error, do not start
-- Tool fails: Record failure, escalate to human
-- Memory unavailable: Fall back to session memory only
-
-### Recovery
-- Auto-retry on transient failures
-- Graceful degradation (reduced capabilities)
-- Human escalation after max retries
-
-## 10. Security
-
-### Authentication
-- Being has API keys for tool access
-- Tool access is scoped by skill
-- All requests signed with Being ID
-
-### Privacy
-- Sensitive data in memory is encrypted
-- Memory access is audited
-- Contribution records are immutable but private
-
-## 11. Versioning
-
-Beings can have versions:
-```yaml
-version: "1.2.3"              # Current version
-minProtocolVersion: "0.1"     # Min supported protocol
-maxProtocolVersion: "1.0"     # Max supported protocol
+```bash
+git add .beings/
+git commit -m "docs(beings): update memory with session learnings"
 ```
 
-## 12. Examples
+## 6. Multi-Developer Support
 
-See `examples/` directory for:
-- [Simple Chat Being](../examples/simple-chat)
-- [Research Assistant Being](../examples/research-assistant)
-- [Team Coordinator Being](../examples/team-coordinator)
+When multiple developers work on the same repo:
+
+- **`.beings/`** is shared — everyone reads and writes to the same project memory
+- **`.beings-local/`** is individual — each developer has their own private preferences
+- **Merge conflicts** in MEMORY.md should be resolved by keeping both entries
+- **CONVENTIONS.md** changes should be discussed via PR, not unilateral updates
+
+## 7. AI Tool Integration
+
+### Integration Method
+
+Each AI tool has a configuration file where the Beings Protocol instructions are added:
+
+| Tool | Config File | Method |
+|------|-------------|--------|
+| Cursor | `.cursorrules` | Append Beings Protocol section |
+| Claude Code | `CLAUDE.md` | Append Beings Protocol section |
+| GitHub Copilot | `.github/copilot-instructions.md` | Append Beings Protocol section |
+| Windsurf | `.windsurfrules` | Append Beings Protocol section |
+| OpenClaw | `SOUL.md` / `AGENTS.md` | Native compatibility |
+| Other | Custom | Use `prompts/system-prompt.md` |
+
+### Minimum Viable Integration
+
+At minimum, the AI tool must be instructed to:
+
+1. Read `.beings/SOUL.md` for identity
+2. Read `.beings/MEMORY.md` for project context
+3. Follow `.beings/CONVENTIONS.md` for code style
+
+### Full Integration
+
+For the complete experience, also include:
+
+4. Follow `.beings/AGENTS.md` workflow
+5. Read `.beings-local/USER.md` for developer preferences
+6. Update MEMORY.md and daily logs during work
+
+## 8. Compatibility with OpenClaw
+
+The Beings Protocol is directly inspired by OpenClaw's architecture:
+
+| OpenClaw | Beings Protocol | Notes |
+|----------|----------------|-------|
+| `SOUL.md` | `.beings/SOUL.md` | Same concept, nested in directory |
+| `AGENTS.md` | `.beings/AGENTS.md` | Same concept |
+| `MEMORY.md` | `.beings/MEMORY.md` | Same concept |
+| `USER.md` | `.beings-local/USER.md` | Moved to private directory |
+| `memory/` | `.beings/memory/` | Same concept |
+
+**OpenClaw is the reference implementation of the Beings Protocol.**
+
+## 9. Security Considerations
+
+- `.beings-local/` MUST be gitignored
+- SECRETS.md MUST never contain actual secrets in `.beings/`
+- Memory updates SHOULD be reviewed in PRs (they contain project decisions)
+- Being SHOULD ask before destructive operations
+- Being MUST NOT exfiltrate data from `.beings-local/`
+
+## 10. Versioning
+
+This specification follows semantic versioning:
+- **Major:** Breaking changes to file structure
+- **Minor:** New optional files or features
+- **Patch:** Clarifications and fixes
+
+Current version: **0.1.0-draft**
 
 ---
 
-**Last updated: 2026-02-26**
-**Protocol Version: 0.1-draft**
+*The Beings Protocol is an open standard. Contributions welcome.*
+*Last updated: 2026-02-26*

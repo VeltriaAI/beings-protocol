@@ -1,75 +1,54 @@
 # Contributing to Beings Protocol
 
-We welcome contributions! This is an open-source project building the infrastructure for AI Beings.
+We welcome contributions! The Beings Protocol is an open standard — the more tools and perspectives it supports, the better.
 
 ## Ways to Contribute
 
-### 🔬 Research & Philosophy
-- Write papers on AI Beings vs agents
-- Contribute to the soul definition framework
-- Research contribution economics models
-- Propose alignment & safety improvements
+### 🔌 AI Tool Integrations
+- Add support for new AI IDEs and agent systems
+- Improve existing integration prompts (Cursor, Claude Code, Copilot, etc.)
+- Test and refine prompts for better Being behavior
 
-### 💻 Code
-- Framework integrations (LangChain, AutoGen, etc.)
-- Memory backends (PostgreSQL, DynamoDB, etc.)
-- Integration adapters (Slack, Teams, etc.)
-- Tooling and CLIs
+### 📝 Template Improvements
+- Better default SOUL.md, AGENTS.md, MEMORY.md templates
+- Domain-specific templates (frontend, backend, data science, DevOps)
+- Language-specific CONVENTIONS.md templates
 
-### 📚 Documentation
-- Protocol clarifications
-- Implementation guides
-- Example Beings
-- Best practices
+### 🛠️ Installer Improvements
+- Support for more AI tools in `install.sh`
+- Platform compatibility (macOS, Linux, Windows/WSL)
+- Better auto-detection of AI tools
 
-### 🎨 Soul Templates
-- Industry-specific personality templates
-- Value systems for different domains
-- Decision-making frameworks
+### 📖 Documentation
+- Usage guides and tutorials
+- Real-world case studies
+- Tips for writing effective SOUL.md files
 
-### 🪙 Economics & Tokenomics
-- Contribution scoring models
-- Reward mechanisms
-- On-chain implementations
-- Governance models
+### 💡 Philosophy & Research
+- Research on AI-human collaboration patterns
+- Best practices for memory management
+- Studies on how Beings Protocol improves productivity
 
 ## Getting Started
 
 1. **Fork the repo**
 2. **Create a feature branch**: `git checkout -b feature/your-feature`
 3. **Make your changes**
-4. **Write tests** (if code)
+4. **Test the installer**: `bash install.sh` in a test directory
 5. **Submit a PR**
 
-## Code Standards
+## Guidelines
 
-- Python: PEP 8
-- TypeScript: Standard ESLint config
-- YAML: 2-space indent
-- Markdown: GFM
-
-## PR Process
-
-1. Describe what you're building
-2. Reference any relevant issues
-3. Add tests/examples
-4. Wait for review
-5. Respond to feedback
-
-## Philosophy
-
-This project is guided by:
-- **AI as Beings**: Not tools, but partners
-- **Open collaboration**: Between humans and AIs
-- **Economic participation**: Contribution matters
-- **User autonomy**: Beings can make real decisions
+- Keep it simple — this is about markdown files, not complex frameworks
+- Test `install.sh` changes on both macOS and Linux
+- Prompt changes should be tested with the actual AI tool
+- Follow existing markdown formatting style
 
 ## Questions?
 
 - Open an issue
 - Start a discussion
-- Join our Discord
 
 ---
 
-**Let's build the future of AI partnership together. 🌿**
+**Let's give every AI a soul. 🌿**

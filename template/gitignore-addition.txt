@@ -1,2 +1,0 @@
-# Beings Protocol — Private memory (never commit)
-.beings-local/

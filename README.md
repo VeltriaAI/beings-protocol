@@ -55,6 +55,7 @@ your-project/
 │   ├── AGENTS.md               # How the Being works in this repo
 │   ├── MEMORY.md               # Long-term project memory
 │   ├── CONVENTIONS.md          # Code style, patterns, rules
+│   ├── GOALS.md                # Current project priorities
 │   └── memory/                 # Daily logs & decisions
 │       └── .gitkeep
 ├── .beings-local/              # Private to YOUR machine (gitignored)
@@ -260,13 +261,6 @@ Native compatibility. OpenClaw's `SOUL.md`, `AGENTS.md`, `MEMORY.md` map directl
 ### Any Other System
 
 Use the universal system prompt in `prompts/system-prompt.md`.
-
-## Examples
-
-- **[TypeScript Project](./examples/typescript/)** — Being for a Next.js app
-- **[Python Project](./examples/python/)** — Being for a FastAPI backend
-- **[Monorepo](./examples/monorepo/)** — Being for a turborepo workspace
-- **[Open Source](./examples/open-source/)** — Being for an OSS maintainer
 
 ## FAQ
 
