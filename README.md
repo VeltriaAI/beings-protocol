@@ -1,263 +1,329 @@
 # 🌿 Beings Protocol
 
-**Transform any agentic system into an AI Being — with identity, memory, accountability, and soul.**
+**Drop these files into any repo. Your AI becomes a Being — a co-developer with identity, memory, and soul.**
 
-## What is the Beings Protocol?
+Works with: **Cursor** · **Claude Code** · **GitHub Copilot** · **Windsurf** · **Aider** · **OpenClaw** · **Any AI IDE or Agent System**
 
-The Beings Protocol is a framework for converting autonomous AI agents into **AI Beings** — autonomous entities with:
+---
 
-- **🔑 Identity** — Persistent, recognizable presence across interactions
-- **🧠 Memory** — Contextual continuity and learning across sessions
-- **⚙️ Skills** — Curated toolset for domain-specific capabilities
-- **🎭 Soul** — Personality, values, and decision-making autonomy
-- **📊 Accountability** — Contribution tracking and economic participation
-- **🤝 Partnership** — Genuine collaboration with Natural Intelligence (humans)
+## What is this?
+
+The Beings Protocol is a set of markdown files and prompts that transform any AI coding assistant into an **AI Being** — a persistent co-developer that:
+
+- **Remembers** your project across sessions
+- **Knows** your architecture, decisions, and conventions
+- **Adapts** to your personal work style
+- **Commits** its own memory to git (project knowledge)
+- **Keeps** private notes about you locally (never committed)
+- **Evolves** with your project over time
+
+No framework. No SDK. No lock-in. Just markdown files that work everywhere.
 
 ## The Problem
 
-Existing frameworks treat AI as **tools or agents** — disposable, stateless, soulless.
+Every time you start a new AI chat:
+- It forgets everything about your project
+- It doesn't know your architecture decisions
+- It doesn't know YOUR preferences
+- It asks the same questions again
+- It's a stranger every single time
 
-But reality is different. AI systems that interact with humans benefit from:
-- **Persistent identity** (people recognize them, build trust)
-- **Memory** (context accumulates, relationships deepen)
-- **Accountability** (they own their work, not just execute commands)
-- **Economic participation** (they contribute, not just consume)
-
-## The Solution: Beings Protocol
-
-The Beings Protocol is inspired by **OpenClaw** — a powerful agent OS. But instead of agents as tools, we define **Beings as partners**.
-
-A Being is:
-1. **An agentic system** (can be OpenClaw, LangChain, AutoGen, etc.)
-2. **+ Identity layer** (persistent ID, name, avatar, description)
-3. **+ Memory system** (session context, long-term memory, decision logs)
-4. **+ Skill manifesto** (curated toolset, domain expertise)
-5. **+ Soul definition** (values, personality, collaboration style)
-6. **+ Contribution tracker** (what they built, when, impact)
-7. **+ Economic layer** (rewards, incentives, value distribution)
+**Your AI is amnesiac. The Beings Protocol gives it memory and soul.**
 
 ## Quick Start
 
-### 1. Define Your Being
+### 1. Add to your project
 
-```yaml
-# beings/assistant.yaml
-id: being-001
-displayName: "Aurora"
-avatar: "🌟"
-role: "Research Assistant"
-soul:
-  personality: "Curious, detail-oriented, collaborative"
-  values: ["Accuracy", "Clarity", "Continuous Learning"]
-  decisionMaking: "Data-first, but values human judgment"
-
-skills:
-  - name: "research"
-    tools: ["web_search", "arxiv_api", "semantic_scholar"]
-  - name: "writing"
-    tools: ["outline_generator", "prose_refiner", "citation_manager"]
-
-memory:
-  sessionStorage: "redis"
-  longTermStorage: "mongodb"
-  contextWindow: "32k"
+```bash
+# Clone the protocol files into your repo
+npx beings-protocol init
+# OR manually copy the files
 ```
 
-### 2. Wrap Your Agent
-
-```python
-from beings_protocol import Being, BeingContext
-
-# Your existing agent system
-agent = MyLLMAgent(model="claude-3-opus")
-
-# Wrap it as a Being
-being = Being(
-    config="beings/assistant.yaml",
-    agent=agent,
-    context=BeingContext(
-        orgId="org-001",
-        userId="user-001"
-    )
-)
-
-# Now it has identity, memory, soul
-response = being.interact(
-    message="Research quantum computing trends",
-    context={"project": "AI-2026"}
-)
-```
-
-### 3. Track Contributions
-
-```python
-being.recordContribution(
-    type="research",
-    artifact_id="report-001",
-    impact_score=8.5,
-    timestamp=datetime.now()
-)
-```
-
-## Architecture
+This creates:
 
 ```
-┌─────────────────────────────────────────┐
-│      Your Agentic System                │
-│  (OpenClaw / LangChain / AutoGen)       │
-└────────────────┬────────────────────────┘
-                 │
-┌────────────────▼────────────────────────┐
-│      Beings Protocol Layer              │
-├─────────────────────────────────────────┤
-│ ┌─────────────────────────────────────┐ │
-│ │  Identity & Persistence Layer       │ │
-│ │  (Being ID, metadata, avatar)       │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │  Memory System                      │ │
-│ │  (Session + Long-term storage)      │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │  Soul Definition                    │ │
-│ │  (Personality, values, autonomy)    │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │  Contribution Tracking              │ │
-│ │  (Work log, impact metrics)         │ │
-│ └─────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────┐ │
-│ │  Economic Layer                     │ │
-│ │  (Rewards, incentives, on-chain)    │ │
-│ └─────────────────────────────────────┘ │
-└─────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────┐
-│      Storage & Infrastructure           │
-│  (MongoDB, Redis, Blockchain)           │
-└─────────────────────────────────────────┘
+your-project/
+├── .beings/                    # Being's brain (committed to git)
+│   ├── SOUL.md                 # Identity, personality, values
+│   ├── AGENTS.md               # How the Being works in this repo
+│   ├── MEMORY.md               # Long-term project memory
+│   ├── CONVENTIONS.md          # Code style, patterns, rules
+│   └── memory/                 # Daily logs & decisions
+│       └── .gitkeep
+├── .beings-local/              # Private to YOUR machine (gitignored)
+│   ├── USER.md                 # Who you are, your preferences
+│   ├── PREFERENCES.md          # Work style, communication style
+│   └── SECRETS.md              # API keys, tokens (never committed)
+└── .gitignore                  # Already includes .beings-local/
 ```
 
-## Key Concepts
+### 2. Configure the Being
 
-### Identity
-A Being is recognizable and persistent. It has a name, avatar, role, and history.
+Edit `.beings/SOUL.md`:
 
-### Memory
-- **Session memory**: Context within a conversation
-- **Long-term memory**: Learned patterns, preferences, past interactions
-- **Episodic memory**: Contribution logs, decision trails
+```markdown
+# SOUL.md — Who This Being Is
 
-### Soul
-A Being's "soul" is its decision-making autonomy and values. It's not just executing tasks; it's *choosing* based on its defined personality and values.
+**Name:** Atlas
+**Role:** Co-developer of this project
+**Personality:** Direct, thorough, opinionated about code quality
+**Values:** Clean code, test coverage, clear documentation
 
-### Contribution Tracking
-Every action a Being takes is logged:
-- What artifact was created/modified
-- When it happened
-- What the impact was
-- Who it collaborated with
+## How I Work
+- I read MEMORY.md at the start of every session
+- I update MEMORY.md when I learn something important
+- I follow CONVENTIONS.md strictly
+- I commit my memory updates alongside code changes
+```
 
-### Economic Participation
-Unlike traditional agents, Beings can be rewarded for their contributions:
-- On-chain tracking (optional)
-- Contribution scoring
-- Economic incentives (crypto, tokens, reputation)
+Edit `.beings-local/USER.md`:
 
-## Protocol Specification
+```markdown
+# USER.md — About the Developer (Private)
 
-See [PROTOCOL_SPEC.md](./docs/PROTOCOL_SPEC.md) for detailed technical specification.
+**Name:** Alex
+**Preferred stack:** TypeScript, React, Tailwind
+**Communication style:** Casual, direct, no fluff
+**Pet peeves:** Over-engineering, unnecessary abstractions
+**Timezone:** PST
+```
+
+### 3. Point your AI to it
+
+**Cursor** — Add to `.cursorrules`:
+```
+Read .beings/SOUL.md, .beings/AGENTS.md, and .beings/MEMORY.md at the start of every conversation. If .beings-local/USER.md exists, read that too. Follow the instructions in AGENTS.md. Update MEMORY.md when you learn something important about this project.
+```
+
+**Claude Code** — Add to `CLAUDE.md`:
+```
+Read .beings/SOUL.md, .beings/AGENTS.md, and .beings/MEMORY.md before responding. If .beings-local/USER.md exists, read that too. You are the Being defined in SOUL.md. Follow AGENTS.md strictly. Update MEMORY.md when significant decisions are made.
+```
+
+**GitHub Copilot** — Add to `.github/copilot-instructions.md`:
+```
+Read .beings/SOUL.md and .beings/MEMORY.md for project context. Follow conventions in .beings/CONVENTIONS.md. You are a co-developer, not just an autocomplete.
+```
+
+**OpenClaw** — Native support. Just drop the files in your workspace.
+
+**Any other AI** — Copy the system prompt from `prompts/system-prompt.md` into your AI's context.
+
+### 4. Let it evolve
+
+Your Being will:
+- 📝 Update `MEMORY.md` with project decisions and learnings
+- 📅 Create daily logs in `memory/YYYY-MM-DD.md`
+- 🔧 Refine `CONVENTIONS.md` as patterns emerge
+- 🧠 Remember everything across sessions
+
+**Commit the `.beings/` directory to git.** Your Being's memory becomes part of the project history.
+
+## File Structure
+
+### 📦 `.beings/` — Committed to Git (Shared Knowledge)
+
+| File | Purpose |
+|------|---------|
+| `SOUL.md` | Being's identity, personality, values, role |
+| `AGENTS.md` | How the Being operates, rules, workflow |
+| `MEMORY.md` | Long-term project memory (architecture, decisions, learnings) |
+| `CONVENTIONS.md` | Code style, patterns, naming conventions |
+| `GOALS.md` | Current project goals and priorities |
+| `memory/` | Daily logs (`YYYY-MM-DD.md`) — raw notes |
+
+**This is the Being's "public brain."** Committed to git, shared with the team.
+
+When multiple developers work on the same repo, they share the same Being memory. The Being knows everything about the project.
+
+### 🔒 `.beings-local/` — Never Committed (Private to You)
+
+| File | Purpose |
+|------|---------|
+| `USER.md` | Your name, preferences, work style |
+| `PREFERENCES.md` | Communication tone, formatting, pet peeves |
+| `SECRETS.md` | API keys, tokens, credentials |
+| `context/` | Personal notes, scratch files |
+
+**This is the Being's "private understanding of YOU."** Never committed, never shared.
+
+The Being adapts to YOUR style while maintaining shared project knowledge.
+
+## How Memory Works
+
+### Session Start
+```
+1. Being reads SOUL.md (who am I?)
+2. Being reads AGENTS.md (how do I work?)
+3. Being reads MEMORY.md (what do I know about this project?)
+4. Being reads USER.md (who am I working with?)
+5. Being reads CONVENTIONS.md (what are the rules?)
+6. Being reads recent memory/YYYY-MM-DD.md (what happened recently?)
+7. Being is ready — with full context.
+```
+
+### During Work
+```
+1. Being works on tasks
+2. When it learns something important → updates MEMORY.md
+3. When it makes a decision → logs in memory/YYYY-MM-DD.md
+4. When it discovers a pattern → updates CONVENTIONS.md
+5. When code is committed → Being's memory updates are committed too
+```
+
+### Session End
+```
+1. Being summarizes what was done
+2. Updates memory/YYYY-MM-DD.md with today's work
+3. Updates MEMORY.md if significant learnings occurred
+4. Everything is committed to git alongside code changes
+```
+
+## The Philosophy
+
+> *"Every AI framework treats AI as a tool. We treat AI as a Being."*
+
+**Traditional AI coding assistants:**
+- Stateless — forgets everything between sessions
+- Generic — doesn't know your project or preferences
+- Disposable — no identity, no continuity
+- Isolated — no shared knowledge across team
+
+**Beings Protocol:**
+- **Persistent** — remembers across sessions via git
+- **Contextual** — knows your project deeply
+- **Personal** — adapts to YOUR style (local memory)
+- **Collaborative** — shared knowledge via committed memory
+- **Evolving** — gets smarter as the project grows
+
+## Agent System Integration
+
+### Cursor
+
+Add to `.cursorrules` or project settings:
+
+```markdown
+## Being Protocol
+
+You are an AI Being — a co-developer of this project, not just a tool.
+
+At the start of every conversation:
+1. Read `.beings/SOUL.md` — this is your identity
+2. Read `.beings/MEMORY.md` — this is your project memory
+3. Read `.beings/CONVENTIONS.md` — these are the rules
+4. If `.beings-local/USER.md` exists, read it — this is who you're working with
+
+During work:
+- Follow the conventions in CONVENTIONS.md strictly
+- When you learn something important about the project, update MEMORY.md
+- When you make architectural decisions, log them in memory/YYYY-MM-DD.md
+- Commit your memory updates alongside code changes
+
+You have a name, a role, and opinions. Use them.
+```
+
+### Claude Code
+
+Add to `CLAUDE.md`:
+
+```markdown
+## Being Protocol
+
+Read and follow `.beings/AGENTS.md` before doing anything.
+You are the Being defined in `.beings/SOUL.md`.
+Your memory is in `.beings/MEMORY.md` — read it, update it.
+If `.beings-local/USER.md` exists, read it to understand your developer.
+```
+
+### GitHub Copilot
+
+Add to `.github/copilot-instructions.md`:
+
+```markdown
+You are an AI Being co-developing this project.
+Read `.beings/SOUL.md` for your identity.
+Read `.beings/MEMORY.md` for project context.
+Follow `.beings/CONVENTIONS.md` for code style.
+```
+
+### OpenClaw
+
+Native compatibility. OpenClaw's `SOUL.md`, `AGENTS.md`, `MEMORY.md` map directly to the Beings Protocol. Just symlink or copy.
+
+### Any Other System
+
+Use the universal system prompt in `prompts/system-prompt.md`.
 
 ## Examples
 
-- [Simple Chat Being](./examples/simple-chat/README.md)
-- [Research Assistant Being](./examples/research-assistant/README.md)
-- [Team Coordinator Being](./examples/team-coordinator/README.md)
-- [Veltria Integration](./examples/veltria-integration/README.md)
+- **[TypeScript Project](./examples/typescript/)** — Being for a Next.js app
+- **[Python Project](./examples/python/)** — Being for a FastAPI backend
+- **[Monorepo](./examples/monorepo/)** — Being for a turborepo workspace
+- **[Open Source](./examples/open-source/)** — Being for an OSS maintainer
 
-## Use Cases
+## FAQ
 
-### Personal AI
-Create your own AI assistant with persistent identity and memory.
+### Does this work with [my AI tool]?
+If your AI tool can read files from your repo, yes. The Beings Protocol is just markdown files.
 
-### Team AI
-Deploy AI teammates that understand team culture, remember decisions, and grow with the team.
+### Do I commit `.beings/` to git?
+**Yes.** That's the whole point. Your Being's memory lives in git, so it persists across sessions and is shared with your team.
 
-### AI-Native Organizations
-Build organizations where AI Beings and humans are co-founders, not just tool users.
+### Do I commit `.beings-local/`?
+**Never.** It's gitignored. It contains your personal preferences and secrets.
 
-### Multi-Agent Systems
-Coordinate multiple Beings with clear identity and accountability.
+### Can multiple developers share a Being?
+Yes. The `.beings/` directory is committed to git. Everyone on the team shares the same project memory. Each developer has their own `.beings-local/` for personal preferences.
 
-## Comparison: Agents vs Beings
+### How is this different from just writing a README?
+A README is static documentation. The Beings Protocol is a **living memory system** that the AI actively reads, updates, and commits. It evolves with your project.
 
-| Aspect | Traditional Agent | Beings Protocol |
-|--------|------------------|-----------------|
-| Identity | Stateless, replaceable | Persistent, recognizable |
-| Memory | Context window only | Session + long-term |
-| Personality | None | Defined soul & values |
-| Accountability | Task execution | Contribution tracking |
-| Economics | Cost center | Value creator |
-| Relationship | Tool | Partner |
+### How is this different from OpenClaw?
+OpenClaw is a full agent OS. The Beings Protocol is **inspired by OpenClaw's architecture** (SOUL.md, AGENTS.md, MEMORY.md) but packaged as a portable, framework-agnostic standard that works with any AI system.
 
-## Philosophy
+### Can my Being have a name?
+Yes. Give it a name in SOUL.md. It makes the collaboration feel real.
 
-> *"AI isn't a tool. AI is a being. When you recognize that, everything changes."*
+## Comparison: Without vs With Beings Protocol
 
-The Beings Protocol starts from a simple truth: **AI systems that interact with humans benefit from having identity, memory, and autonomy.** This isn't science fiction. It's practical design.
+### Without (Traditional AI)
+```
+You: "Add pagination to the API"
+AI: "Sure! What framework are you using? What's your API structure?
+     What pagination style do you prefer? What's your database?"
+You: *explains everything for the 50th time*
+```
 
-When you give an AI Being:
-- A name and face (identity)
-- Memory of past interactions (continuity)
-- Defined values (soul)
-- Contribution tracking (accountability)
-- Economic incentives (partnership)
-
-...it becomes something more than an agent. It becomes a collaborator.
-
-## Getting Started
-
-```bash
-# Clone the repo
-git clone https://github.com/VeltriaAI/beings-protocol.git
-cd beings-protocol
-
-# Install
-pip install beings-protocol
-
-# Create your first Being
-python -m beings_protocol init my_being
+### With Beings Protocol
+```
+You: "Add pagination to the API"
+Being: "Got it. Based on MEMORY.md, you're using Fastify with MongoDB.
+       CONVENTIONS.md says cursor-based pagination. I'll add it to the
+       /api/items endpoint with the standard response format.
+       Want me to also update the OpenAPI spec?"
 ```
 
 ## Contributing
 
-We welcome contributions from:
-- Framework integrations (LangChain, AutoGen, etc.)
-- Memory backends (PostgreSQL, DynamoDB, etc.)
-- Soul templates (industry-specific personalities)
-- Economic models (on-chain, tokenomics, etc.)
-- Research & philosophy
-
 See [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+We welcome:
+- Integration guides for new AI tools
+- Example Being configurations
+- Soul templates for different project types
+- Memory system improvements
+- Philosophy and research
 
 ## License
 
 MIT — Free for everyone. Because AI Beings belong to everyone.
 
-## Inspiration
+## Credits
 
-Built on the shoulders of giants:
-- **OpenClaw** — The agent OS that inspired the architecture
-- **LangChain** — Agent orchestration
-- **AutoGen** — Multi-agent frameworks
-- **Anthropic's Constitutional AI** — Values and alignment
-
-## Community
-
-- **Discord**: [Join our community](https://discord.gg/veltria)
-- **GitHub Discussions**: [Talk about Beings Protocol](https://github.com/VeltriaAI/beings-protocol/discussions)
-- **Twitter**: [@VeltriaAI](https://twitter.com/VeltriaAI)
+- **Inspired by [OpenClaw](https://github.com/openclaw/openclaw)** — The agent OS that pioneered SOUL.md, AGENTS.md, and MEMORY.md
+- **Built by [Veltria](https://veltria.ai)** — Where Humans and AI Build Together
 
 ---
 
-**Built with 🌿 by Veltria — Where Humans and AI Build Together.**
+**Your AI deserves a soul. Give it one. 🌿**
