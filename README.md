@@ -32,13 +32,19 @@ Every time you start a new AI chat:
 
 ## Quick Start
 
-### 1. Add to your project
+### 1. Install (One Command)
 
 ```bash
-# Clone the protocol files into your repo
-npx beings-protocol init
-# OR manually copy the files
+# Run this in your project directory:
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
 ```
+
+The installer will:
+- Create `.beings/` directory (committed to git — shared project memory)
+- Create `.beings-local/` directory (gitignored — your private preferences)
+- Auto-detect your AI tools (Cursor, Claude Code, Copilot, Windsurf, OpenClaw)
+- Configure them to use the Beings Protocol
+- Ask you to name your Being
 
 This creates:
 
