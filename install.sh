@@ -40,16 +40,16 @@ print_info() { echo -e "  ${CYAN}${ARROW}${NC} $1"; }
 print_warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 
 # ============================================================
-# Detect AI tools
+# Detect AI tools (strict — only obvious signals)
 # ============================================================
 detect_tools() {
   local tools=()
   [ -f ".cursorrules" ] || [ -d ".cursor" ] && tools+=("cursor")
   [ -f "CLAUDE.md" ] || [ -f ".claude" ] && tools+=("claude-code")
-  [ -d ".github" ] || [ -f ".github/copilot-instructions.md" ] && tools+=("github-copilot")
-  [ -f "SOUL.md" ] || [ -f "AGENTS.md" ] && [ -d ".openclaw" ] && tools+=("openclaw")
+  [ -f ".github/copilot-instructions.md" ] && tools+=("github-copilot")
   [ -f ".windsurfrules" ] && tools+=("windsurf")
   [ -f ".aider.conf.yml" ] || [ -f ".aiderignore" ] && tools+=("aider")
+  [ -d ".openclaw" ] && tools+=("openclaw")
   echo "${tools[@]}"
 }
 
@@ -383,13 +383,25 @@ main() {
     echo ""
     if [ -t 0 ]; then
       read -rp "  Auto-configure detected tools? (Y/n) " auto_confirm
-      [[ "$auto_confirm" != [nN]* ]] && auto_configure "$detected_tools" || ask_tools
+      if [[ "$auto_confirm" != [nN]* ]]; then
+        auto_configure "$detected_tools"
+        echo ""
+        read -rp "  Configure any other tools too? (y/N) " more_tools
+        [[ "$more_tools" == [yY]* ]] && ask_tools
+      else
+        ask_tools
+      fi
     else
       auto_configure "$detected_tools"
     fi
   else
-    print_info "No AI tools detected."
-    [ -t 0 ] && ask_tools || print_info "Run install.sh interactively to configure tools."
+    print_info "No AI tools auto-detected."
+    echo ""
+    if [ -t 0 ]; then
+      ask_tools
+    else
+      print_info "Run install.sh interactively to configure tools."
+    fi
   fi
 
   # Done!
