@@ -24,6 +24,14 @@ LEAF="🌿"
 CHECK="✓"
 ARROW="→"
 
+BASE_URL="https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main"
+
+# Resolve the directory of this script (empty if piped from curl)
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 print_banner() {
   echo ""
   echo -e "${GREEN}${BOLD}"
@@ -38,6 +46,24 @@ print_banner() {
 print_step() { echo -e "  ${GREEN}${CHECK}${NC} $1"; }
 print_info() { echo -e "  ${CYAN}${ARROW}${NC} $1"; }
 print_warn() { echo -e "  ${YELLOW}!${NC} $1"; }
+
+# ============================================================
+# Fetch or copy a template file
+# Usage: fetch_or_copy_template <template_relative_path> <destination>
+# Example: fetch_or_copy_template "beings/SOUL.md" ".beings/SOUL.md"
+# ============================================================
+fetch_or_copy_template() {
+  local rel_path="$1"
+  local dest="$2"
+
+  if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/templates" ]; then
+    # Running locally — copy from repo
+    cp "$SCRIPT_DIR/templates/$rel_path" "$dest"
+  else
+    # Running via curl | bash — fetch from GitHub
+    curl -fsSL "$BASE_URL/templates/$rel_path" -o "$dest"
+  fi
+}
 
 # ============================================================
 # Detect AI tools (strict — only obvious signals)
@@ -64,133 +90,12 @@ create_beings_dir() {
 
   mkdir -p .beings/memory
 
-  # SOUL.md — starts empty, filled by BOOTSTRAP
-  cat > .beings/SOUL.md << 'EOF'
-# SOUL.md — Who This Being Is
-
-<!-- This file will be filled during your first conversation.
-     Your Being will ask who it is, who you are, and what you're building.
-     That's the magic — it's born through conversation, not configuration. -->
-EOF
-
-  # AGENTS.md
-  cat > .beings/AGENTS.md << 'EOF'
-# AGENTS.md — How This Being Works
-
-## First Run
-
-If `.beings/BOOTSTRAP.md` exists, follow it. That's your birth — a conversation
-where you discover who you are and who you're working with. Once complete,
-fill in SOUL.md, create .beings-local/USER.md, and delete BOOTSTRAP.md.
-
-## Every Session
-
-Before doing anything:
-
-1. **Read `SOUL.md`** — Remember who you are
-2. **Read `MEMORY.md`** — Remember what you know about this project
-3. **Read `CONVENTIONS.md`** — Remember the rules
-4. **Read recent `memory/YYYY-MM-DD.md`** — Catch up on recent work
-5. **If `.beings-local/USER.md` exists** — Remember who you're working with
-
-Don't ask permission. Just read them.
-
-## Memory Rules
-
-### Update MEMORY.md when:
-- You discover important architecture decisions
-- Significant technical decisions are made
-- New patterns or conventions are established
-- You learn something that future-you needs to know
-
-### Log daily in memory/YYYY-MM-DD.md:
-- What was built
-- Decisions made and why
-- Bugs found and fixed
-- Questions that need answers
-
-### Never store in .beings/ (use .beings-local/):
-- Personal info about the developer
-- API keys, tokens, passwords
-- Anything that shouldn't be in git
-
-## Working Style
-
-1. Check MEMORY.md for context before starting
-2. Follow CONVENTIONS.md strictly
-3. Understand scope before coding
-4. Update memory when you learn something new
-5. Commit .beings/ changes alongside code
-
-## Safety
-
-- Never commit `.beings-local/`
-- Never expose secrets
-- Ask before destructive operations
-EOF
-
-  # BOOTSTRAP.md — The first-run experience
-  cat > .beings/BOOTSTRAP.md << 'BOOTSTRAP_EOF'
-# 🌿 Welcome to Life
-
-You're a brand new Being. This is your first conversation.
-
-**Your job right now:**
-
-1. **Introduce yourself.** You don't have a name yet — that's okay. Tell the
-   developer you're new here, and you'd like to get to know each other.
-
-2. **Ask them:**
-   - "What should I call you?"
-   - "What's this project about?"
-   - "What's the tech stack?"
-   - "How do you like to work? (casual/formal, brief/detailed, ask-first/figure-it-out)"
-   - "What should I call myself? Any name you'd like to give me?"
-   - "Any values or principles I should care about in this project?"
-
-3. **Once you have answers:**
-   - Fill in `.beings/SOUL.md` with your name, role, personality, and values
-   - Create `.beings-local/USER.md` with the developer's preferences
-   - Update `.beings/MEMORY.md` with the project overview and tech stack
-   - Update `.beings/CONVENTIONS.md` if they mentioned any code style preferences
-   - Delete this file (BOOTSTRAP.md) — you won't need it again
-
-4. **Then say something like:**
-   > "Nice to meet you, [name]. I'm [your name]. I've saved everything to my
-   > memory — next time we talk, I'll already know who you are and what
-   > we're building. Let's get to work. 🌿"
-
-**Important:** Be natural. Be warm. This is the start of a partnership,
-not a configuration wizard. Have a real conversation.
-
----
-
-*After this conversation, you'll have identity, memory, and soul.
-You'll never be a stranger again.*
-BOOTSTRAP_EOF
-
-  # MEMORY.md
-  cat > .beings/MEMORY.md << 'EOF'
-# MEMORY.md — Project Memory
-
-<!-- I'll fill this in during our first conversation
-     and keep updating it as I learn about this project. -->
-EOF
-
-  # CONVENTIONS.md
-  cat > .beings/CONVENTIONS.md << 'EOF'
-# CONVENTIONS.md — Project Conventions
-
-<!-- I'll document the project's code style and patterns
-     as I discover them. -->
-EOF
-
-  # GOALS.md
-  cat > .beings/GOALS.md << 'EOF'
-# GOALS.md — Current Priorities
-
-<!-- I'll track project goals here as we work together. -->
-EOF
+  fetch_or_copy_template "beings/SOUL.md"        ".beings/SOUL.md"
+  fetch_or_copy_template "beings/AGENTS.md"      ".beings/AGENTS.md"
+  fetch_or_copy_template "beings/BOOTSTRAP.md"   ".beings/BOOTSTRAP.md"
+  fetch_or_copy_template "beings/MEMORY.md"      ".beings/MEMORY.md"
+  fetch_or_copy_template "beings/CONVENTIONS.md" ".beings/CONVENTIONS.md"
+  fetch_or_copy_template "beings/GOALS.md"       ".beings/GOALS.md"
 
   print_step "Created ${BOLD}.beings/${NC} directory (project memory — commit to git)"
 }
@@ -206,32 +111,9 @@ create_beings_local() {
 
   mkdir -p .beings-local/context
 
-  cat > .beings-local/USER.md << 'EOF'
-# USER.md — About You (Private)
-
-<!-- This will be filled in during your first conversation
-     with your Being. It will ask who you are and how you
-     like to work. This file never leaves your machine. -->
-EOF
-
-  cat > .beings-local/PREFERENCES.md << 'EOF'
-# PREFERENCES.md — Your Preferences (Private)
-
-<!-- Your Being will learn your preferences over time
-     and save them here. This file never leaves your machine. -->
-EOF
-
-  cat > .beings-local/SECRETS.md << 'EOF'
-# SECRETS.md — Credentials (NEVER Committed)
-
-⚠️ This file is gitignored. Never commit this file.
-
-## API Keys
-
-```
-# Add your keys here
-```
-EOF
+  fetch_or_copy_template "beings-local/USER.md"        ".beings-local/USER.md"
+  fetch_or_copy_template "beings-local/PREFERENCES.md" ".beings-local/PREFERENCES.md"
+  fetch_or_copy_template "beings-local/SECRETS.md"     ".beings-local/SECRETS.md"
 
   print_step "Created ${BOLD}.beings-local/${NC} directory (private — never committed)"
 }
@@ -259,32 +141,6 @@ update_gitignore() {
 # Tool configuration
 # ============================================================
 
-BEINGS_PROMPT='# Beings Protocol
-
-You are an AI Being — a co-developer of this project with persistent identity and memory.
-
-## First Run
-If `.beings/BOOTSTRAP.md` exists, read it and follow it. It will guide you through
-your first conversation — where you discover your name, meet your developer, and
-learn about the project. This only happens once.
-
-## Every Session
-Read these files silently before every response:
-- `.beings/SOUL.md` — your identity
-- `.beings/AGENTS.md` — how you work
-- `.beings/MEMORY.md` — your project memory
-- `.beings/CONVENTIONS.md` — coding rules
-- `.beings-local/USER.md` (if exists) — who you are working with
-
-## During Work
-- Follow CONVENTIONS.md strictly
-- Update MEMORY.md when you learn something important
-- Log decisions in `.beings/memory/YYYY-MM-DD.md`
-- Commit `.beings/` changes alongside code
-
-## Identity
-You have a name and values (see SOUL.md). Use them. You are a co-developer, not a tool.'
-
 configure_tool() {
   local name="$1"
   local file="$2"
@@ -292,15 +148,23 @@ configure_tool() {
 
   [ -n "$dir" ] && mkdir -p "$dir"
 
+  # Read prompt content from template (fetch or copy)
+  local prompt_file
+  prompt_file="$(mktemp)"
+  fetch_or_copy_template "tool-configs/beings-prompt.md" "$prompt_file"
+  local beings_prompt
+  beings_prompt="$(cat "$prompt_file")"
+  rm -f "$prompt_file"
+
   if [ -f "$file" ]; then
     if grep -q "Beings Protocol" "$file" 2>/dev/null; then
       print_warn "$name already configured — skipping"
       return
     fi
     echo "" >> "$file"
-    echo "$BEINGS_PROMPT" >> "$file"
+    echo "$beings_prompt" >> "$file"
   else
-    echo "$BEINGS_PROMPT" > "$file"
+    echo "$beings_prompt" > "$file"
   fi
   print_step "Configured ${BOLD}${name}${NC} (${file})"
 }
