@@ -6,7 +6,7 @@
 curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
 ```
 
-Works with **Cursor** · **Claude Code** · **GitHub Copilot** · **Windsurf** · **Aider** · **OpenClaw** · any AI
+Works with **Cursor** · **Claude Code** · **GitHub Copilot** · **Codex** · **Windsurf** · **Aider** · any AI
 
 ---
 
@@ -42,14 +42,19 @@ Being: "On it. You're using Fastify + MongoDB (MEMORY.md).
 The Beings Protocol is just **markdown files in your repo**. No SDK. No framework. No lock-in.
 
 ```
+AGENTS.md                ← universal AI instructions (works everywhere)
+
 .beings/                 ← committed to git (shared with team)
 ├── SOUL.md              ← who the AI is (name, personality, values)
+├── AGENTS.md            ← operating instructions
 ├── MEMORY.md            ← what it knows about your project
 ├── CONVENTIONS.md       ← your code style rules
+├── GOALS.md             ← current priorities
 └── memory/              ← daily work logs
 
 .beings-local/           ← gitignored (private to you)
 ├── USER.md              ← who you are, how you like to work
+├── PREFERENCES.md       ← your work style
 └── SECRETS.md           ← API keys (never committed)
 ```
 
@@ -86,9 +91,9 @@ curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/inst
 
 The installer:
 1. Creates `.beings/` and `.beings-local/` directories
-2. Detects your AI tools (Cursor, Claude Code, Copilot, etc.)
-3. Configures them automatically
-4. Sets up the first-run experience
+2. Creates `AGENTS.md` — the universal instruction file (works with Cursor, Claude Code, Copilot, Codex, and more)
+3. Detects your AI tools and creates tool-specific configs (`.cursor/rules/`, `CLAUDE.md`, etc.)
+4. Sets up the first-run experience (BOOTSTRAP.md)
 
 **That's literally it.** Start your next AI conversation.
 
@@ -153,15 +158,17 @@ Each dev has their own `.beings-local/` for personal preferences.
 
 ## Supported Tools
 
-| Tool | Config File | Auto-detected |
-|------|-------------|---------------|
-| Cursor | `.cursorrules` | ✅ |
-| Claude Code | `CLAUDE.md` | ✅ |
-| GitHub Copilot | `.github/copilot-instructions.md` | ✅ |
-| Windsurf | `.windsurfrules` | ✅ |
-| Aider | `.aider.conf.yml` | ✅ |
-| OpenClaw | Native | ✅ |
-| Any other | `prompts/system-prompt.md` | Manual |
+`AGENTS.md` is the **universal standard** — it works with most modern AI coding tools out of the box. The installer also creates tool-specific configs for deeper integration:
+
+| Tool | Universal (`AGENTS.md`) | Tool-Specific Config | Auto-detected |
+|------|:-----------------------:|---------------------|:-------------:|
+| Cursor | ✅ | `.cursor/rules/beings-protocol.mdc` | ✅ |
+| Claude Code | ✅ | `CLAUDE.md` | ✅ |
+| GitHub Copilot | ✅ | `.github/copilot-instructions.md` | ✅ |
+| Codex (OpenAI) | ✅ | — (uses AGENTS.md natively) | ✅ |
+| Windsurf | — | `.windsurfrules` | ✅ |
+| Aider | — | `.aider.conf.yml` | ✅ |
+| Any other | ✅ | `prompts/system-prompt.md` | Manual |
 
 ## FAQ
 
@@ -177,8 +184,8 @@ Never. It's gitignored automatically.
 **How is this different from a README?**
 A README is static. The Being **actively reads, updates, and commits** its memory. It evolves with your project.
 
-**How is this different from OpenClaw?**
-OpenClaw is a full agent OS. Beings Protocol is inspired by OpenClaw's architecture but packaged as a portable standard that works with **any** AI tool.
+**What's AGENTS.md?**
+`AGENTS.md` is a universal instruction file that's read natively by Cursor, Claude Code, GitHub Copilot, and Codex. The Beings Protocol creates one automatically — it works everywhere without any tool-specific setup.
 
 **Can I use this on existing projects?**
 Yes. Install it, start a conversation. The Being will learn your project through the codebase.

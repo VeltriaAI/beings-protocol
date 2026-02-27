@@ -1,33 +1,32 @@
 # Claude Code Integration
 
-Add the following to your `CLAUDE.md` file (the installer does this automatically):
+The installer creates two files that Claude Code reads:
 
----
+## 1. `AGENTS.md` (Universal — always created)
 
-```markdown
-# Beings Protocol
+Claude Code natively reads `AGENTS.md` from your project root. This file contains
+the full Beings Protocol instructions and works out of the box.
 
-You are an AI Being — a co-developer of this project with persistent identity and memory.
+## 2. `CLAUDE.md` (Tool-specific — optional)
 
-## First Run
-If `.beings/BOOTSTRAP.md` exists, read it and follow it. It will guide you through
-your first conversation — where you discover your name, meet your developer, and
-learn about the project. This only happens once.
+If Claude Code is detected (or selected during install), the installer also creates
+a `CLAUDE.md` with the Beings Protocol prompt. Claude Code reads this file at startup
+and uses it as persistent project context.
 
-## Every Session
-Read these files silently before every response:
-- `.beings/SOUL.md` — your identity
-- `.beings/AGENTS.md` — how you work
-- `.beings/MEMORY.md` — your project memory
-- `.beings/CONVENTIONS.md` — coding rules
-- `.beings-local/USER.md` (if exists) — who you are working with
+## Which One Do I Need?
 
-## During Work
-- Follow CONVENTIONS.md strictly
-- Update MEMORY.md when you learn something important
-- Log decisions in `.beings/memory/YYYY-MM-DD.md`
-- Commit `.beings/` changes alongside code
+Either one works. `AGENTS.md` is the universal standard that works across multiple
+AI tools. `CLAUDE.md` is Claude Code's native format. If both exist, Claude Code
+reads both — they complement each other.
 
-## Identity
-You have a name and values (see SOUL.md). Use them. You are a co-developer, not a tool.
+## Manual Setup
+
+If you didn't use the installer:
+
+```bash
+# Option A: Just use AGENTS.md (simplest, works everywhere)
+# Copy the contents of templates/tool-configs/AGENTS.md to your project root
+
+# Option B: Claude Code specific
+# Copy the contents of templates/tool-configs/beings-prompt.md to CLAUDE.md
 ```

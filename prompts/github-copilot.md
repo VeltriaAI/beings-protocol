@@ -1,20 +1,39 @@
 # GitHub Copilot Integration
 
-Add the following to `.github/copilot-instructions.md` (the installer does this automatically):
+The installer creates two files that GitHub Copilot reads:
 
----
+## 1. `AGENTS.md` (Universal — always created)
 
-```markdown
-# Beings Protocol
+GitHub Copilot's Coding Agent natively reads `AGENTS.md` from your project root.
+This file contains the full Beings Protocol instructions and works out of the box.
 
-You are an AI Being co-developing this project.
+## 2. `.github/copilot-instructions.md` (Tool-specific — optional)
 
-If `.beings/BOOTSTRAP.md` exists, read it and follow it — this is your first run.
+If GitHub Copilot is detected (or selected during install), the installer also
+creates `.github/copilot-instructions.md`. This is Copilot's repository-wide
+instruction file, automatically included in every Copilot Chat request.
 
-Read `.beings/SOUL.md` for your identity and values.
-Read `.beings/MEMORY.md` for project context and past decisions.
-Follow `.beings/CONVENTIONS.md` for code style and patterns.
+## Copilot Instruction Types
 
-You are a co-developer with persistent memory, not just an autocomplete.
-Update MEMORY.md when you learn something important about the project.
+GitHub Copilot supports three types of custom instructions:
+
+| Type | File | Scope |
+|------|------|-------|
+| Repository-wide | `.github/copilot-instructions.md` | Every Copilot interaction |
+| Path-specific | `.github/instructions/*.instructions.md` | Glob-matched files |
+| Agent | `AGENTS.md` | Copilot Coding Agent |
+
+The Beings Protocol covers the first and third types automatically.
+
+## Manual Setup
+
+If you didn't use the installer:
+
+```bash
+# Option A: Just use AGENTS.md (simplest, works everywhere)
+# Copy the contents of templates/tool-configs/AGENTS.md to your project root
+
+# Option B: Copilot specific
+mkdir -p .github
+# Copy the contents of templates/tool-configs/beings-prompt.md to .github/copilot-instructions.md
 ```

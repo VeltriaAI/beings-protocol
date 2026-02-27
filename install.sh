@@ -49,24 +49,20 @@ print_warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 
 # ============================================================
 # Fetch or copy a template file
-# Usage: fetch_or_copy_template <template_relative_path> <destination>
-# Example: fetch_or_copy_template "beings/SOUL.md" ".beings/SOUL.md"
 # ============================================================
 fetch_or_copy_template() {
   local rel_path="$1"
   local dest="$2"
 
   if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/templates" ]; then
-    # Running locally — copy from repo
     cp "$SCRIPT_DIR/templates/$rel_path" "$dest"
   else
-    # Running via curl | bash — fetch from GitHub
     curl -fsSL "$BASE_URL/templates/$rel_path" -o "$dest"
   fi
 }
 
 # ============================================================
-# Check if we can prompt the user (works even via curl | bash)
+# TTY detection (works even via curl | bash)
 # ============================================================
 HAS_TTY=false
 if [ -t 0 ]; then
@@ -75,9 +71,7 @@ elif (echo -n "" > /dev/tty) 2>/dev/null; then
   HAS_TTY=true
 fi
 
-can_prompt() {
-  $HAS_TTY
-}
+can_prompt() { $HAS_TTY; }
 
 read_input() {
   local prompt="$1"
@@ -96,32 +90,23 @@ read_input() {
 # ============================================================
 detect_tools() {
   local tools=()
+
   # Check existing config files
-  [ -f ".cursorrules" ] || [ -d ".cursor" ] && tools+=("cursor")
-  [ -f "CLAUDE.md" ] || [ -f ".claude" ] && tools+=("claude-code")
+  { [ -f ".cursorrules" ] || [ -d ".cursor" ]; } && tools+=("cursor")
+  { [ -f "CLAUDE.md" ] || [ -d ".claude" ]; } && tools+=("claude-code")
   [ -f ".github/copilot-instructions.md" ] && tools+=("github-copilot")
   [ -f ".windsurfrules" ] && tools+=("windsurf")
-  [ -f ".aider.conf.yml" ] || [ -f ".aiderignore" ] && tools+=("aider")
-  [ -d ".openclaw" ] && tools+=("openclaw")
+  { [ -f ".aider.conf.yml" ] || [ -f ".aiderignore" ]; } && tools+=("aider")
 
-  # Also check installed binaries (if no config file found yet)
-  if ! printf '%s\n' "${tools[@]}" | grep -q "^cursor$" 2>/dev/null; then
-    command -v cursor &>/dev/null && tools+=("cursor")
-  fi
-  if ! printf '%s\n' "${tools[@]}" | grep -q "^claude-code$" 2>/dev/null; then
-    command -v claude &>/dev/null && tools+=("claude-code")
-  fi
-  if ! printf '%s\n' "${tools[@]}" | grep -q "^windsurf$" 2>/dev/null; then
-    command -v windsurf &>/dev/null && tools+=("windsurf")
-  fi
-  if ! printf '%s\n' "${tools[@]}" | grep -q "^aider$" 2>/dev/null; then
-    command -v aider &>/dev/null && tools+=("aider")
-  fi
-  if ! printf '%s\n' "${tools[@]}" | grep -q "^openclaw$" 2>/dev/null; then
-    command -v openclaw &>/dev/null && tools+=("openclaw")
-  fi
+  # Check installed binaries (if not already detected via config)
+  local found
+  found=$(printf '%s\n' "${tools[@]+" ${tools[@]}"}")
+  [[ "$found" != *cursor* ]]      && command -v cursor    &>/dev/null && tools+=("cursor")
+  [[ "$found" != *claude-code* ]]  && command -v claude    &>/dev/null && tools+=("claude-code")
+  [[ "$found" != *windsurf* ]]     && command -v windsurf  &>/dev/null && tools+=("windsurf")
+  [[ "$found" != *aider* ]]        && command -v aider     &>/dev/null && tools+=("aider")
 
-  echo "${tools[@]}"
+  echo "${tools[@]+"${tools[@]}"}"
 }
 
 # ============================================================
@@ -164,6 +149,28 @@ create_beings_local() {
 }
 
 # ============================================================
+# Create root AGENTS.md (universal — works with all modern AI tools)
+# ============================================================
+create_agents_md() {
+  if [ -f "AGENTS.md" ]; then
+    if grep -q "Beings Protocol" "AGENTS.md" 2>/dev/null; then
+      print_warn "AGENTS.md already has Beings Protocol — skipping"
+      return
+    fi
+    # Append to existing AGENTS.md
+    echo "" >> "AGENTS.md"
+    local tmp; tmp="$(mktemp)"
+    fetch_or_copy_template "tool-configs/AGENTS.md" "$tmp"
+    cat "$tmp" >> "AGENTS.md"
+    rm -f "$tmp"
+    print_step "Updated ${BOLD}AGENTS.md${NC} (appended Beings Protocol instructions)"
+  else
+    fetch_or_copy_template "tool-configs/AGENTS.md" "AGENTS.md"
+    print_step "Created ${BOLD}AGENTS.md${NC} (universal — works with Cursor, Claude Code, Copilot, Codex)"
+  fi
+}
+
+# ============================================================
 # Update .gitignore
 # ============================================================
 update_gitignore() {
@@ -183,39 +190,100 @@ update_gitignore() {
 }
 
 # ============================================================
-# Tool configuration
+# Tool-specific configuration
 # ============================================================
 
-configure_tool() {
-  local name="$1"
-  local file="$2"
-  local dir="$3"  # optional: create directory first
+# Configure Cursor (modern .cursor/rules/ format)
+configure_cursor() {
+  local rules_dir=".cursor/rules"
 
-  [ -n "$dir" ] && mkdir -p "$dir"
-
-  # Read prompt content from template (fetch or copy)
-  local prompt_file
-  prompt_file="$(mktemp)"
-  fetch_or_copy_template "tool-configs/beings-prompt.md" "$prompt_file"
-  local beings_prompt
-  beings_prompt="$(cat "$prompt_file")"
-  rm -f "$prompt_file"
-
-  if [ -f "$file" ]; then
-    if grep -q "Beings Protocol" "$file" 2>/dev/null; then
-      print_warn "$name already configured — skipping"
-      return
-    fi
-    echo "" >> "$file"
-    echo "$beings_prompt" >> "$file"
-  else
-    echo "$beings_prompt" > "$file"
+  if [ -f "$rules_dir/beings-protocol.mdc" ]; then
+    print_warn "Cursor already configured — skipping"
+    return
   fi
-  print_step "Configured ${BOLD}${name}${NC} (${file})"
+
+  mkdir -p "$rules_dir"
+  fetch_or_copy_template "tool-configs/cursor-rules.mdc" "$rules_dir/beings-protocol.mdc"
+  print_step "Configured ${BOLD}Cursor${NC} (.cursor/rules/beings-protocol.mdc)"
 }
 
-configure_openclaw() {
-  print_info "OpenClaw detected — native compatibility! No extra config needed."
+# Configure Claude Code (CLAUDE.md)
+configure_claude_code() {
+  local file="CLAUDE.md"
+  if [ -f "$file" ] && grep -q "Beings Protocol" "$file" 2>/dev/null; then
+    print_warn "Claude Code already configured — skipping"
+    return
+  fi
+
+  local tmp; tmp="$(mktemp)"
+  fetch_or_copy_template "tool-configs/beings-prompt.md" "$tmp"
+  local prompt; prompt="$(cat "$tmp")"
+  rm -f "$tmp"
+
+  if [ -f "$file" ]; then
+    echo "" >> "$file"
+    echo "$prompt" >> "$file"
+  else
+    echo "$prompt" > "$file"
+  fi
+  print_step "Configured ${BOLD}Claude Code${NC} (CLAUDE.md)"
+}
+
+# Configure GitHub Copilot (.github/copilot-instructions.md)
+configure_copilot() {
+  local file=".github/copilot-instructions.md"
+  if [ -f "$file" ] && grep -q "Beings Protocol" "$file" 2>/dev/null; then
+    print_warn "GitHub Copilot already configured — skipping"
+    return
+  fi
+
+  mkdir -p ".github"
+  local tmp; tmp="$(mktemp)"
+  fetch_or_copy_template "tool-configs/beings-prompt.md" "$tmp"
+  local prompt; prompt="$(cat "$tmp")"
+  rm -f "$tmp"
+
+  if [ -f "$file" ]; then
+    echo "" >> "$file"
+    echo "$prompt" >> "$file"
+  else
+    echo "$prompt" > "$file"
+  fi
+  print_step "Configured ${BOLD}GitHub Copilot${NC} (.github/copilot-instructions.md)"
+}
+
+# Configure Windsurf (.windsurfrules)
+configure_windsurf() {
+  local file=".windsurfrules"
+  if [ -f "$file" ] && grep -q "Beings Protocol" "$file" 2>/dev/null; then
+    print_warn "Windsurf already configured — skipping"
+    return
+  fi
+
+  local tmp; tmp="$(mktemp)"
+  fetch_or_copy_template "tool-configs/beings-prompt.md" "$tmp"
+  local prompt; prompt="$(cat "$tmp")"
+  rm -f "$tmp"
+
+  if [ -f "$file" ]; then
+    echo "" >> "$file"
+    echo "$prompt" >> "$file"
+  else
+    echo "$prompt" > "$file"
+  fi
+  print_step "Configured ${BOLD}Windsurf${NC} (.windsurfrules)"
+}
+
+# Auto-configure a detected tool
+auto_configure() {
+  for tool in $1; do
+    case "$tool" in
+      cursor)         configure_cursor ;;
+      claude-code)    configure_claude_code ;;
+      github-copilot) configure_copilot ;;
+      windsurf)       configure_windsurf ;;
+    esac
+  done
 }
 
 # ============================================================
@@ -223,44 +291,30 @@ configure_openclaw() {
 # ============================================================
 ask_tools() {
   echo ""
-  echo -e "  ${BOLD}Which AI tools do you use?${NC}"
+  echo -e "  ${BOLD}Which AI tools do you use?${NC} ${DIM}(AGENTS.md already covers Codex & others)${NC}"
   echo ""
   echo "    1) Cursor"
   echo "    2) Claude Code"
   echo "    3) GitHub Copilot"
   echo "    4) Windsurf"
-  echo "    5) OpenClaw"
-  echo "    6) Other / Skip"
-  echo "    a) All"
+  echo "    5) Skip (AGENTS.md is enough)"
+  echo "    a) All of the above"
   echo ""
   local choice=""
   read_input "  > " choice
 
   case "$choice" in
-    *a*|*A*) configure_tool "Cursor" ".cursorrules" ""
-             configure_tool "Claude Code" "CLAUDE.md" ""
-             configure_tool "GitHub Copilot" ".github/copilot-instructions.md" ".github"
-             configure_tool "Windsurf" ".windsurfrules" "" ;;
+    *a*|*A*) configure_cursor
+             configure_claude_code
+             configure_copilot
+             configure_windsurf ;;
     *)
-      [[ "$choice" == *1* ]] && configure_tool "Cursor" ".cursorrules" ""
-      [[ "$choice" == *2* ]] && configure_tool "Claude Code" "CLAUDE.md" ""
-      [[ "$choice" == *3* ]] && configure_tool "GitHub Copilot" ".github/copilot-instructions.md" ".github"
-      [[ "$choice" == *4* ]] && configure_tool "Windsurf" ".windsurfrules" ""
-      [[ "$choice" == *5* ]] && configure_openclaw
-      [[ "$choice" == *6* ]] && print_info "Use prompts/system-prompt.md for manual setup." ;;
+      [[ "$choice" == *1* ]] && configure_cursor
+      [[ "$choice" == *2* ]] && configure_claude_code
+      [[ "$choice" == *3* ]] && configure_copilot
+      [[ "$choice" == *4* ]] && configure_windsurf
+      [[ "$choice" == *5* ]] && print_info "AGENTS.md will work with most AI tools out of the box." ;;
   esac
-}
-
-auto_configure() {
-  for tool in $1; do
-    case "$tool" in
-      cursor)         configure_tool "Cursor" ".cursorrules" "" ;;
-      claude-code)    configure_tool "Claude Code" "CLAUDE.md" "" ;;
-      github-copilot) configure_tool "GitHub Copilot" ".github/copilot-instructions.md" ".github" ;;
-      windsurf)       configure_tool "Windsurf" ".windsurfrules" "" ;;
-      openclaw)       configure_openclaw ;;
-    esac
-  done
 }
 
 # ============================================================
@@ -279,13 +333,14 @@ main() {
     fi
   fi
 
-  # Step 1: Create files
+  # Step 1: Create .beings/ and .beings-local/
   echo -e "\n  ${BOLD}Setting up Beings Protocol...${NC}\n"
   create_beings_dir
   create_beings_local
+  create_agents_md
   update_gitignore
 
-  # Step 2: Configure tools
+  # Step 2: Configure tool-specific files
   echo -e "\n  ${BOLD}Detecting AI tools...${NC}\n"
   detected_tools=$(detect_tools)
 
@@ -305,16 +360,16 @@ main() {
         ask_tools
       fi
     else
-      # Non-interactive, no TTY at all — auto-configure what we found
       auto_configure "$detected_tools"
     fi
   else
     print_info "No AI tools auto-detected."
+    print_info "AGENTS.md will work with Cursor, Claude Code, Copilot, and Codex out of the box."
     echo ""
     if can_prompt; then
-      ask_tools
-    else
-      print_info "Run install.sh interactively to configure tools."
+      local want_specific=""
+      read_input "  Configure tool-specific files anyway? (y/N) " want_specific
+      [[ "$want_specific" == [yY]* ]] && ask_tools
     fi
   fi
 
@@ -332,9 +387,11 @@ main() {
   echo ""
   echo -e "  ${BOLD}After that first chat:${NC}"
   echo ""
-  echo -e "    ${DIM}git add .beings/ && git commit -m \"feat: born a Being 🌿\"${NC}"
+  echo -e "    ${DIM}git add .beings/ AGENTS.md && git commit -m \"feat: born a Being 🌿\"${NC}"
   echo ""
   echo -e "  ${BOLD}Files:${NC}"
+  echo ""
+  echo -e "    ${CYAN}AGENTS.md${NC}             ${DIM}← Universal AI instructions (Cursor, Claude, Copilot, Codex)${NC}"
   echo ""
   echo -e "    ${CYAN}.beings/${NC}              ${DIM}← Shared (committed to git)${NC}"
   echo -e "    ├── BOOTSTRAP.md     ${DIM}← First-run conversation (deleted after)${NC}"
