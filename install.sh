@@ -66,16 +66,61 @@ fetch_or_copy_template() {
 }
 
 # ============================================================
-# Detect AI tools (strict — only obvious signals)
+# Check if we can prompt the user (works even via curl | bash)
+# ============================================================
+HAS_TTY=false
+if [ -t 0 ]; then
+  HAS_TTY=true
+elif (echo -n "" > /dev/tty) 2>/dev/null; then
+  HAS_TTY=true
+fi
+
+can_prompt() {
+  $HAS_TTY
+}
+
+read_input() {
+  local prompt="$1"
+  local var_name="$2"
+  if [ -t 0 ]; then
+    read -rp "$prompt" "$var_name"
+  elif $HAS_TTY; then
+    read -rp "$prompt" "$var_name" < /dev/tty
+  else
+    eval "$var_name=''"
+  fi
+}
+
+# ============================================================
+# Detect AI tools (config files + installed binaries)
 # ============================================================
 detect_tools() {
   local tools=()
+  # Check existing config files
   [ -f ".cursorrules" ] || [ -d ".cursor" ] && tools+=("cursor")
   [ -f "CLAUDE.md" ] || [ -f ".claude" ] && tools+=("claude-code")
   [ -f ".github/copilot-instructions.md" ] && tools+=("github-copilot")
   [ -f ".windsurfrules" ] && tools+=("windsurf")
   [ -f ".aider.conf.yml" ] || [ -f ".aiderignore" ] && tools+=("aider")
   [ -d ".openclaw" ] && tools+=("openclaw")
+
+  # Also check installed binaries (if no config file found yet)
+  if ! printf '%s\n' "${tools[@]}" | grep -q "^cursor$" 2>/dev/null; then
+    command -v cursor &>/dev/null && tools+=("cursor")
+  fi
+  if ! printf '%s\n' "${tools[@]}" | grep -q "^claude-code$" 2>/dev/null; then
+    command -v claude &>/dev/null && tools+=("claude-code")
+  fi
+  if ! printf '%s\n' "${tools[@]}" | grep -q "^windsurf$" 2>/dev/null; then
+    command -v windsurf &>/dev/null && tools+=("windsurf")
+  fi
+  if ! printf '%s\n' "${tools[@]}" | grep -q "^aider$" 2>/dev/null; then
+    command -v aider &>/dev/null && tools+=("aider")
+  fi
+  if ! printf '%s\n' "${tools[@]}" | grep -q "^openclaw$" 2>/dev/null; then
+    command -v openclaw &>/dev/null && tools+=("openclaw")
+  fi
+
   echo "${tools[@]}"
 }
 
@@ -188,7 +233,8 @@ ask_tools() {
   echo "    6) Other / Skip"
   echo "    a) All"
   echo ""
-  read -rp "  > " choice
+  local choice=""
+  read_input "  > " choice
 
   case "$choice" in
     *a*|*A*) configure_tool "Cursor" ".cursorrules" ""
@@ -226,8 +272,9 @@ main() {
   # Sanity check
   if [ ! -d ".git" ] && [ ! -f "package.json" ] && [ ! -f "pyproject.toml" ] && [ ! -f "Cargo.toml" ] && [ ! -f "go.mod" ] && [ ! -f "Makefile" ]; then
     print_warn "Not in a project directory."
-    if [ -t 0 ]; then
-      read -rp "  Continue anyway? (y/N) " confirm
+    if can_prompt; then
+      local confirm=""
+      read_input "  Continue anyway? (y/N) " confirm
       [[ "$confirm" != [yY]* ]] && echo "  Aborted." && exit 0
     fi
   fi
@@ -245,23 +292,26 @@ main() {
   if [ -n "$detected_tools" ]; then
     print_info "Detected: ${BOLD}${detected_tools}${NC}"
     echo ""
-    if [ -t 0 ]; then
-      read -rp "  Auto-configure detected tools? (Y/n) " auto_confirm
+    if can_prompt; then
+      local auto_confirm=""
+      read_input "  Auto-configure detected tools? (Y/n) " auto_confirm
       if [[ "$auto_confirm" != [nN]* ]]; then
         auto_configure "$detected_tools"
         echo ""
-        read -rp "  Configure any other tools too? (y/N) " more_tools
+        local more_tools=""
+        read_input "  Configure any other tools too? (y/N) " more_tools
         [[ "$more_tools" == [yY]* ]] && ask_tools
       else
         ask_tools
       fi
     else
+      # Non-interactive, no TTY at all — auto-configure what we found
       auto_configure "$detected_tools"
     fi
   else
     print_info "No AI tools auto-detected."
     echo ""
-    if [ -t 0 ]; then
+    if can_prompt; then
       ask_tools
     else
       print_info "Run install.sh interactively to configure tools."
