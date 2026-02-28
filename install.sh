@@ -318,6 +318,130 @@ ask_tools() {
 }
 
 # ============================================================
+# Code Intelligence (Optional)
+# ============================================================
+setup_code_intelligence() {
+  local detected_tools="$1"
+  local python_cmd=""
+  
+  # Check for Python package managers
+  if command -v uv &>/dev/null; then
+    python_cmd="uv pip install"
+  elif command -v pip &>/dev/null; then
+    python_cmd="pip install"
+  elif command -v pip3 &>/dev/null; then
+    python_cmd="pip3 install"
+  fi
+
+  if [ -z "$python_cmd" ]; then
+    print_warn "No pip or uv found — skipping code intelligence"
+    print_info "You can add it later by installing axoniq and running: axon analyze ."
+    return
+  fi
+
+  echo ""
+  echo -e "  ${BOLD}🧠 Code Intelligence (Optional)${NC}\n"
+  echo -e "  Give your Being structural understanding of this codebase?"
+  echo -e "  This installs ${BOLD}Axon${NC} — graph-powered code analysis via MCP.\n"
+  echo -e "  ${DIM}(100% local, no data leaves your machine)${NC}\n"
+  
+  local install_axon=""
+  if can_prompt; then
+    read_input "  Install Axon? (Y/n) " install_axon
+  else
+    # Non-interactive: skip
+    print_info "Non-interactive mode — skipping code intelligence (add later with: pip install axoniq)"
+    return
+  fi
+
+  if [[ "$install_axon" == [nN]* ]]; then
+    print_info "Skipped code intelligence — you can add it later"
+    print_info "To install: ${DIM}pip install axoniq && axon analyze .${NC}"
+    return
+  fi
+
+  # Install axoniq
+  print_info "Installing axoniq..."
+  if ! $python_cmd axoniq >/dev/null 2>&1; then
+    print_warn "Failed to install axoniq — skipping code intelligence"
+    print_info "You can install manually: ${DIM}pip install axoniq${NC}"
+    return
+  fi
+  print_step "Installed ${BOLD}axoniq${NC}"
+
+  # Index the codebase
+  print_info "Indexing codebase with Axon..."
+  if ! axon analyze . >/dev/null 2>&1; then
+    print_warn "Failed to index codebase — Axon may not support this language yet"
+    print_info "MCP config created anyway — try running: ${DIM}axon analyze .${NC}"
+  else
+    print_step "Indexed codebase"
+  fi
+
+  # Copy canonical MCP config
+  fetch_or_copy_template "beings/mcp.json" ".beings/mcp.json"
+  print_step "Created ${BOLD}.beings/mcp.json${NC} (canonical MCP config)"
+
+  # Create tool-specific MCP configs
+  local mcp_installed=false
+
+  # Claude Code: .mcp.json
+  if [[ "$detected_tools" == *claude-code* ]] || [ -f "CLAUDE.md" ]; then
+    cat > .mcp.json <<'EOF'
+{
+  "mcpServers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve", "--watch"]
+    }
+  }
+}
+EOF
+    print_step "Configured MCP for ${BOLD}Claude Code${NC} (.mcp.json)"
+    mcp_installed=true
+  fi
+
+  # Cursor: .cursor/mcp.json
+  if [[ "$detected_tools" == *cursor* ]] || [ -d ".cursor" ]; then
+    mkdir -p .cursor
+    cat > .cursor/mcp.json <<'EOF'
+{
+  "mcpServers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve", "--watch"]
+    }
+  }
+}
+EOF
+    print_step "Configured MCP for ${BOLD}Cursor${NC} (.cursor/mcp.json)"
+    mcp_installed=true
+  fi
+
+  if ! $mcp_installed; then
+    print_info "No MCP-compatible tools detected — using CLI fallback"
+    print_info "Your Being can still use: ${DIM}axon impact/context/query${NC}"
+  fi
+
+  # Update .gitignore for .axon/
+  if [ -f ".gitignore" ]; then
+    if ! grep -q "^\.axon/" .gitignore 2>/dev/null; then
+      echo "" >> .gitignore
+      echo "# Axon code intelligence cache" >> .gitignore
+      echo ".axon/" >> .gitignore
+    fi
+  else
+    echo "# Axon code intelligence cache" > .gitignore
+    echo ".axon/" >> .gitignore
+  fi
+  print_step "Added ${BOLD}.axon/${NC} to .gitignore"
+
+  echo ""
+  print_step "${GREEN}Code intelligence ready!${NC}"
+  print_info "Your Being can now use structural code analysis"
+}
+
+# ============================================================
 # Main
 # ============================================================
 main() {
@@ -373,6 +497,9 @@ main() {
     fi
   fi
 
+  # Step 3: Optional code intelligence
+  setup_code_intelligence "$detected_tools"
+
   # Done!
   echo ""
   echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -400,6 +527,9 @@ main() {
   echo -e "    ├── MEMORY.md        ${DIM}← Project memory${NC}"
   echo -e "    ├── CONVENTIONS.md   ${DIM}← Code rules${NC}"
   echo -e "    ├── GOALS.md         ${DIM}← Priorities${NC}"
+  if [ -f ".beings/mcp.json" ]; then
+    echo -e "    ├── mcp.json         ${DIM}← Code intelligence (MCP)${NC}"
+  fi
   echo -e "    └── memory/          ${DIM}← Daily logs${NC}"
   echo ""
   echo -e "    ${YELLOW}.beings-local/${NC}        ${DIM}← Private (never committed)${NC}"

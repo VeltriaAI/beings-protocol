@@ -250,7 +250,114 @@ The Beings Protocol is directly inspired by OpenClaw's architecture:
 - Being SHOULD ask before destructive operations
 - Being MUST NOT exfiltrate data from `.beings-local/`
 
-## 10. Versioning
+## 10. Code Intelligence (Optional)
+
+The Beings Protocol supports optional code intelligence via the Model Context Protocol (MCP). When enabled, Beings gain structural understanding of the codebase through graph-powered analysis.
+
+### 10.1 Canonical MCP Configuration
+
+`.beings/mcp.json` is the single source of truth for MCP server configuration:
+
+```json
+{
+  "servers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve", "--watch"],
+      "description": "Code intelligence — structural search, impact analysis, dead code detection"
+    }
+  }
+}
+```
+
+**Format:** Tool-agnostic JSON that describes MCP servers available to the Being.
+
+### 10.2 Tool-Specific Derivations
+
+The installer derives tool-specific configs from the canonical `.beings/mcp.json`:
+
+| Tool | Config File | Format |
+|------|-------------|--------|
+| **Claude Code** | `.mcp.json` | `{ "mcpServers": { "axon": { "command": "axon", "args": [...] } } }` |
+| **Cursor** | `.cursor/mcp.json` | Same as Claude Code |
+| **Others** | N/A | CLI fallback via shell commands |
+
+**Design principle:** One canonical config, multiple derived formats. Tools read their native config format; the Being's AGENTS.md provides CLI fallback instructions for tools without MCP support.
+
+### 10.3 Axon Integration
+
+[Axon](https://github.com/harshkedia177/axon) is the reference implementation for code intelligence:
+
+**Capabilities:**
+- **Impact analysis** (`axon_impact`) — Shows blast radius of changes
+- **Context understanding** (`axon_context`) — Reveals callers, callees, type info
+- **Structural search** (`axon_query`) — Architecture questions with confidence scores
+- **Dead code detection** (`axon_dead_code`) — Finds unreachable code
+
+**Installation:**
+```bash
+pip install axoniq
+axon analyze .  # Index the codebase
+```
+
+**MCP vs CLI:**
+- When MCP tools are available: Use `axon_impact`, `axon_context`, etc. (via MCP)
+- Otherwise: Fall back to `axon impact <symbol>` (CLI)
+
+### 10.4 Extensibility
+
+The canonical `.beings/mcp.json` can include multiple MCP servers:
+
+```json
+{
+  "servers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve", "--watch"],
+      "description": "Code intelligence"
+    },
+    "custom-tool": {
+      "command": "my-mcp-server",
+      "args": ["--config", "custom.json"],
+      "description": "Custom capability"
+    }
+  }
+}
+```
+
+Beings can integrate any MCP-compatible server. Axon is the reference implementation for code intelligence, not a hard requirement.
+
+### 10.5 Security & Privacy
+
+**Axon runs 100% locally:**
+- No API keys required
+- No data sent to external servers
+- Graph and indices stored in `.axon/` (gitignored)
+
+**Gitignore rules:**
+```
+.axon/
+```
+
+The installer automatically adds `.axon/` to `.gitignore` during setup.
+
+### 10.6 Behavior in AGENTS.md
+
+When `.beings/mcp.json` exists, AGENTS.md instructs the Being to:
+
+1. **Use MCP tools when available** (e.g., `axon_impact` before refactoring shared functions)
+2. **Fall back to CLI** when MCP isn't supported by the tool
+3. **Prefer structural analysis over grep** for accurate, complete results
+
+**Example workflow:**
+```
+Being sees: "Refactor validate_user()"
+Being thinks: "Let me check impact first..."
+Being runs: axon_impact validate_user
+Being reports: "47 functions depend on this. Safe refactor plan: ..."
+```
+
+## 11. Versioning
 
 This specification follows semantic versioning:
 - **Major:** Breaking changes to file structure

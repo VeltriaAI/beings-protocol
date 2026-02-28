@@ -25,6 +25,15 @@ GitHub Copilot supports three types of custom instructions:
 
 The Beings Protocol covers the first and third types automatically.
 
+## Code Intelligence
+
+If you enable code intelligence during install, your Being gains structural understanding:
+
+- `.beings/mcp.json` — Canonical MCP config
+- CLI fallback: `axon impact <function>`, `axon context <symbol>`, etc.
+
+Note: GitHub Copilot does not currently support MCP servers, so code intelligence uses CLI fallback via shell commands. The Being's AGENTS.md provides instructions for using `axon` commands directly.
+
 ## Manual Setup
 
 If you didn't use the installer:

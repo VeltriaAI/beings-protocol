@@ -33,6 +33,17 @@ Cursor applies rules in this order (highest priority first):
 Both `AGENTS.md` and `.cursor/rules/beings-protocol.mdc` will be active, giving you
 double coverage. The `.mdc` file takes precedence if there's any conflict.
 
+## Code Intelligence (MCP)
+
+If you enable code intelligence during install, Cursor gains structural understanding via MCP:
+
+- `.beings/mcp.json` — Canonical MCP config
+- `.cursor/mcp.json` — Cursor's native MCP format (auto-generated from canonical)
+
+MCP tools available: `axon_impact`, `axon_context`, `axon_query`, `axon_dead_code`
+
+CLI fallback: `axon impact <function>`, `axon context <symbol>`, etc.
+
 ## Manual Setup
 
 If you didn't use the installer:

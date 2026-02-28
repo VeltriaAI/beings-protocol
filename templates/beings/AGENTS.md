@@ -50,3 +50,20 @@ Don't ask permission. Just read them.
 - Never commit `.beings-local/`
 - Never expose secrets
 - Ask before destructive operations
+
+## Code Intelligence
+
+If your project has `.beings/mcp.json`, you have structural code understanding via MCP tools.
+
+### When MCP tools are available (axon_query, axon_context, axon_impact):
+- Use `axon_impact` BEFORE modifying any shared function to check blast radius
+- Use `axon_context` to understand unfamiliar symbols (callers, callees, types, community)
+- Use `axon_query` instead of grep for architectural questions
+- Use `axon_dead_code` to find unreachable code before cleanup
+
+### CLI fallback (if MCP is not available):
+- Run `axon impact <function>` before modifying shared code
+- Run `axon context <symbol>` to understand unfamiliar code
+- Run `axon query <search>` instead of grep for architecture questions
+
+Prefer structural tools over grep. They give complete, confidence-scored results in one call.

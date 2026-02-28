@@ -19,6 +19,17 @@ Either one works. `AGENTS.md` is the universal standard that works across multip
 AI tools. `CLAUDE.md` is Claude Code's native format. If both exist, Claude Code
 reads both — they complement each other.
 
+## Code Intelligence (MCP)
+
+If you enable code intelligence during install, Claude Code gains structural understanding via MCP:
+
+- `.beings/mcp.json` — Canonical MCP config
+- `.mcp.json` — Claude Code's native MCP format (auto-generated from canonical)
+
+MCP tools available: `axon_impact`, `axon_context`, `axon_query`, `axon_dead_code`
+
+CLI fallback: `axon impact <function>`, `axon context <symbol>`, etc.
+
 ## Manual Setup
 
 If you didn't use the installer:
