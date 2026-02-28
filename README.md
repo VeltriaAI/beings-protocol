@@ -113,6 +113,22 @@ The installer:
 
 **That's literally it.** Start your next AI conversation.
 
+## 🧠 Code Intelligence (Optional)
+
+The installer can optionally add **structural code understanding** to your Being via [Axon](https://github.com/harshkedia177/axon) — an open-source, graph-powered code intelligence engine.
+
+Your Being goes from "let me grep for that" to knowing the **exact blast radius** of every change:
+
+```
+You:   "Refactor the auth middleware"
+Being: "Before I touch validate_user(), let me check impact...
+       47 functions depend on the return type, 3 execution flows
+       pass through it, and auth_test.py changes alongside it
+       80% of the time. Here's my plan for a safe refactor:"
+```
+
+Axon runs entirely locally — no API keys, no data leaving your machine.
+
 ## Before → After
 
 | Before | After |
