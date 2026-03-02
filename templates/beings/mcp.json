@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve", "--watch"],
+      "description": "Code intelligence — structural search, impact analysis, dead code detection"
+    }
+  }
+}
