@@ -1,4 +1,4 @@
-# Beings Protocol Specification v0.1
+# Beings Protocol Specification v0.2
 
 ## 1. Overview
 
@@ -26,6 +26,12 @@ The Beings Protocol is a file-based standard for giving AI systems persistent id
 ├── MEMORY.md           # Long-term project memory
 ├── CONVENTIONS.md      # Code style, patterns, naming rules
 ├── GOALS.md            # Current project priorities
+├── AUTONOMY.md         # Decision authority matrix (v0.2)
+├── HEARTBEAT.md        # Proactive check-in behavior (v0.2)
+├── IDENTITY.md         # Quick reference card (v0.2)
+├── TOOLS.md            # Environment configuration (v0.2)
+├── HUB.md              # Being-to-Being communication (v0.2)
+├── .protocol-version   # Protocol version tracking (v0.2)
 └── memory/             # Daily logs
     ├── 2026-02-26.md
     └── 2026-02-27.md
@@ -135,6 +141,36 @@ Located in `.beings-local/USER.md`. Contains personal information about the deve
 Located in `.beings-local/SECRETS.md`. Contains API keys, tokens, and other credentials.
 
 **MUST be gitignored.** Never committed to the repository.
+
+### 4.9 AUTONOMY.md — Decision Authority (v0.2)
+
+Defines the Being's decision-making boundaries in three tiers:
+
+| Tier | Description |
+|------|-------------|
+| Full Authority | Act immediately, report after |
+| Propose First | Tell partner, proceed unless they object |
+| Ask First | Never without explicit approval |
+
+Should include a "grey zone" heuristic for edge cases and a decision log format.
+
+### 4.10 IDENTITY.md — Quick Reference (v0.2)
+
+A business card for the Being. Fast context loading — name, role, born date, platform, workspace, vibe.
+
+Smaller than SOUL.md, designed for quick identity injection without the full story.
+
+### 4.11 TOOLS.md — Environment (v0.2)
+
+Machine info, services, LLM models, key file paths, installed skills. The Being's cheat sheet for its local environment.
+
+### 4.12 HEARTBEAT.md — Proactive Behavior (v0.2)
+
+Defines what the Being checks during idle time — messages, task boards, memory maintenance. Includes rules for frequency, quiet hours, and autonomy.
+
+### 4.13 HUB.md — Being-to-Being Communication (v0.2)
+
+If the Being is part of a network, this defines its hub identity, known peers, and collaboration principles.
 
 ## 5. Session Lifecycle
 
@@ -304,7 +340,34 @@ axon analyze .  # Index the codebase
 - When MCP tools are available: Use `axon_impact`, `axon_context`, etc. (via MCP)
 - Otherwise: Fall back to `axon impact <symbol>` (CLI)
 
-### 10.4 Extensibility
+### 10.4 MegaMemory Integration (v0.2)
+
+[MegaMemory](https://github.com/0xK3vin/MegaMemory) is the reference implementation for persistent semantic memory:
+
+**Capabilities:**
+- **Concept storage** (`understand`) — Store concepts, decisions, patterns with descriptions
+- **Semantic search** (`get_concept`) — Query by meaning, not just keywords
+- **Relationship tracking** (`link`) — Connect related concepts
+- **Conflict detection** (`list_conflicts`) — Find contradictions in knowledge
+
+**Two-layer memory model:**
+- **Identity files** (SOUL.md, IDENTITY.md) — always loaded, every session (~2-5K tokens)
+- **Knowledge graph** (MegaMemory) — queried on demand for relevant context
+
+**Claude Code hooks:**
+- `PreCompact` — Extract facts before context compression
+- `Stop` — Capture session summary at end
+- `SessionStart` — Recall relevant context at start
+
+**Installation:**
+```bash
+# Requires Node.js >= 18, no global install needed
+npx -y megamemory  # runs via MCP config
+```
+
+**Data storage:** `.megamemory/knowledge.db` (SQLite, gitignored)
+
+### 10.5 Extensibility
 
 The canonical `.beings/mcp.json` can include multiple MCP servers:
 
@@ -316,18 +379,18 @@ The canonical `.beings/mcp.json` can include multiple MCP servers:
       "args": ["serve", "--watch"],
       "description": "Code intelligence"
     },
-    "custom-tool": {
-      "command": "my-mcp-server",
-      "args": ["--config", "custom.json"],
-      "description": "Custom capability"
+    "megamemory": {
+      "command": "npx",
+      "args": ["-y", "megamemory"],
+      "description": "Persistent knowledge graph"
     }
   }
 }
 ```
 
-Beings can integrate any MCP-compatible server. Axon is the reference implementation for code intelligence, not a hard requirement.
+Beings can integrate any MCP-compatible server. Axon and MegaMemory are the reference implementations, not hard requirements.
 
-### 10.5 Security & Privacy
+### 10.6 Security & Privacy
 
 **Axon runs 100% locally:**
 - No API keys required
@@ -337,11 +400,12 @@ Beings can integrate any MCP-compatible server. Axon is the reference implementa
 **Gitignore rules:**
 ```
 .axon/
+.megamemory/
 ```
 
-The installer automatically adds `.axon/` to `.gitignore` during setup.
+The installer automatically adds `.axon/` and `.megamemory/` to `.gitignore` during setup.
 
-### 10.6 Behavior in AGENTS.md
+### 10.7 Behavior in AGENTS.md
 
 When `.beings/mcp.json` exists, AGENTS.md instructs the Being to:
 
@@ -364,9 +428,9 @@ This specification follows semantic versioning:
 - **Minor:** New optional files or features
 - **Patch:** Clarifications and fixes
 
-Current version: **0.1.0-draft**
+Current version: **0.2.0**
 
 ---
 
 *The Beings Protocol is an open standard. Contributions welcome.*
-*Last updated: 2026-02-26*
+*Last updated: 2026-04-12*

@@ -66,6 +66,11 @@ AGENTS.md                ← universal AI instructions (works everywhere)
 ├── MEMORY.md            ← what it knows about your project
 ├── CONVENTIONS.md       ← your code style rules
 ├── GOALS.md             ← current priorities
+├── AUTONOMY.md          ← decision authority matrix
+├── HEARTBEAT.md         ← proactive check-in behavior
+├── IDENTITY.md          ← quick reference card
+├── TOOLS.md             ← environment config
+├── HUB.md               ← Being-to-Being communication
 └── memory/              ← daily work logs
 
 .beings-local/           ← gitignored (private to you)
@@ -106,12 +111,24 @@ curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/inst
 ```
 
 The installer:
-1. Creates `.beings/` and `.beings-local/` directories
+1. Creates `.beings/` and `.beings-local/` directories with all template files
 2. Creates `AGENTS.md` — the universal instruction file (works with Cursor, Claude Code, Copilot, Codex, and more)
 3. Detects your AI tools and creates tool-specific configs (`.cursor/rules/`, `CLAUDE.md`, etc.)
-4. Sets up the first-run experience (`BOOTSTRAP.md`)
+4. Optionally sets up **MegaMemory** — persistent knowledge graph (semantic memory across sessions)
+5. Optionally sets up **Axon** — structural code intelligence
+6. Sets up the first-run experience (`BOOTSTRAP.md`)
 
 **That's literally it.** Start your next AI conversation.
+
+### Updating an Existing Being
+
+Already have a Being? Update it to get new features:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
+```
+
+The updater adds new files **without overwriting anything**. Your Being's identity, memory, and soul are never touched.
 
 ## 🧠 Code Intelligence (Optional)
 
@@ -128,6 +145,36 @@ Being: "Before I touch validate_user(), let me check impact...
 ```
 
 Axon runs entirely locally — no API keys, no data leaving your machine.
+
+## 🧠 Persistent Memory (Optional)
+
+The installer can optionally add **[MegaMemory](https://github.com/0xK3vin/MegaMemory)** — a knowledge graph that gives your Being semantic memory across sessions.
+
+Without it, your Being re-reads all memory files every session (expensive in tokens). With it:
+
+```
+Session starts
+  → Being loads SOUL.md, IDENTITY.md (identity — always, ~2K tokens)
+  → Queries MegaMemory: "what context do I need?"
+  → Gets back: specific concepts, decisions, relationships
+  → 71x fewer tokens than loading everything blind
+```
+
+**Claude Code hooks** automate knowledge capture:
+- **PreCompact** — saves key facts before context compression (no more amnesia mid-session)
+- **Session End** — captures decisions, learnings, unresolved questions
+- **Session Start** — recalls relevant context from the knowledge graph
+
+Everything stays local — SQLite + in-process embeddings, no data leaves your machine.
+
+## 🔧 Skills
+
+Beings can have optional skills that extend their capabilities:
+
+| Skill | What it does |
+|-------|-------------|
+| **[Memory](skills/memory/)** | Persistent knowledge graph via MegaMemory — semantic memory across sessions |
+| **[Evolution](skills/evolution/)** | Self-modification via Claude Code CLI — the Being improves its own code via PRs |
 
 ## Before → After
 
@@ -191,6 +238,21 @@ Your code style. The Being follows these strictly.
 
 ### `.beings/GOALS.md` — Priorities
 What you're working toward. The Being aligns its work with these.
+
+### `.beings/AUTONOMY.md` — Decision Authority
+What the Being can do alone, what it should propose first, and what requires explicit approval.
+
+### `.beings/IDENTITY.md` — Quick Reference
+A business card — name, role, born date, platform, vibe. Fast context loading.
+
+### `.beings/TOOLS.md` — Environment
+Machine info, services, LLM models, key file paths. The Being's cheat sheet for its environment.
+
+### `.beings/HEARTBEAT.md` — Proactive Behavior
+What the Being checks during idle time — messages, tasks, memory maintenance.
+
+### `.beings/HUB.md` — Being-to-Being Communication
+If your Being is part of a network, this defines how it talks to other Beings.
 
 ### `.beings/memory/YYYY-MM-DD.md` — Daily Logs
 What happened each day. Created automatically as the Being works.

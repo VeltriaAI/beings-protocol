@@ -4,6 +4,11 @@
       "command": "axon",
       "args": ["serve", "--watch"],
       "description": "Code intelligence — structural search, impact analysis, dead code detection"
+    },
+    "megamemory": {
+      "command": "npx",
+      "args": ["-y", "megamemory"],
+      "description": "Persistent knowledge graph — semantic search, concept storage, relationship tracking"
     }
   }
 }

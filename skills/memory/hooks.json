@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Before proceeding, extract key facts, decisions, and learnings from this session. Store them in MegaMemory using the understand tool with clear concept names and descriptions. Link related concepts together. This preserves knowledge that would otherwise be lost during compaction.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'SESSION MEMORY: Capture a summary of this session in MegaMemory. Store: key decisions made, problems solved, unresolved questions, and any learnings about the project or user preferences. Use the understand tool to create or update concepts, and link to link related concepts together.'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'MEMORY RECALL: Query MegaMemory for context relevant to this session. Use get_concept or list to recall recent decisions, active goals, and project context. This supplements your identity files (SOUL.md, IDENTITY.md) with semantic memory.'"
+          }
+        ]
+      }
+    ]
+  }
+}
