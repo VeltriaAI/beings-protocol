@@ -75,6 +75,37 @@ The installer will offer to set up MegaMemory during installation or update.
 3. Copy hooks from `hooks.json` into your `.claude/settings.local.json`
 4. Add `.megamemory/` to your `.gitignore`
 
+## Rebuilding Memory
+
+The knowledge graph is a **local cache** — the MD files are the source of truth. You can rebuild it any time from your committed files.
+
+### When to rebuild
+
+- **New machine** — fresh environment with no `.megamemory/` data
+- **Cache corruption** — DB is broken or lost
+- **User request** — "rebuild your memory", "re-ingest your knowledge"
+- **After bulk MD updates** — large batch of new knowledge written to files
+
+### How it works
+
+The Being walks its MD files in priority order (MEMORY.md, TOOLS.md, CONVENTIONS.md, then session logs), extracts concepts and relationships, and writes them to MegaMemory via the `understand` and `link` tools.
+
+Session logs get special handling — only decisions, learnings, and incidents are extracted (not verbatim).
+
+See [REBUILD.md](REBUILD.md) for the full procedure.
+
+### User-triggered rebuild
+
+Just ask the Being:
+- "Rebuild your memory"
+- "Re-ingest your knowledge"
+- "Load your memory from files"
+
+Or for targeted rebuilds:
+- "Ingest today's session"
+- "Refresh MEMORY.md into the graph"
+- "Ingest everything about [topic]"
+
 ## MCP Tools
 
 MegaMemory exposes these tools via MCP:
