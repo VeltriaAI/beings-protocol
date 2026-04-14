@@ -126,21 +126,28 @@ Hooks use `echo` to inject instructions into the Being's context. The Being then
 ### Via install.sh (recommended)
 
 ```bash
-# Fresh install
+# Fresh install (interactive)
 curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
 
-# Update existing Being
+# Update existing Being (interactive)
 curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
+
+# Non-interactive — auto-install basic-memory without prompting
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --yes
 ```
 
+Use `--yes` when piping via `curl | bash` since there's no TTY for interactive prompts.
+
 The installer will:
-1. Install `basic-memory` via `uv tool` (preferred), `pipx`, or `pip --user`
+1. Install `basic-memory` via `uv tool` (preferred), `pipx`, or `pip --user` (skips install if the binary is already on PATH)
 2. Create `memory-graph/` in your project
-3. Register the project with basic-memory (using folder name)
+3. Register the project with basic-memory (using folder name as project name)
 4. Add basic-memory to your MCP configs (`.beings/mcp.json`, `.mcp.json`, `.cursor/mcp.json`)
 5. Install Claude Code hooks into `.claude/settings.local.json` if Claude Code is detected
 6. Start the `basic-memory sync --watch` daemon in the background
 7. Add `.basic-memory/` to `.gitignore`
+
+**For v0.2.0 users upgrading from MegaMemory:** the installer also strips legacy `megamemory` entries from your MCP configs and replaces old MegaMemory hook commands with the new basic-memory ones. Run `bash install.sh --update --yes` and the migration is fully automated — no manual cleanup needed.
 
 ### Manual setup
 
@@ -191,12 +198,23 @@ Point an Obsidian vault at your `memory-graph/` directory. You get:
 
 ## Migration from MegaMemory (v0.2.0 users)
 
-If you were running the v0.2.0 memory skill with MegaMemory:
+If you were running the v0.2.0 memory skill with MegaMemory, the upgrade is a single command:
 
-1. Run `bash install.sh --update` to install basic-memory alongside
-2. (Optional) Export your MegaMemory concepts as markdown notes using the Being to walk the graph and call `write_note` for each concept
-3. Remove the old `megamemory` entry from your MCP configs manually
-4. Delete `.megamemory/` directory if present (gitignored anyway)
+```bash
+bash install.sh --update --yes
+```
+
+This automatically:
+- Strips the legacy `megamemory` entry from `.beings/mcp.json`, `.mcp.json`, `.cursor/mcp.json`
+- Adds the new `basic-memory` entry in its place (using your folder name as project name)
+- Replaces old MegaMemory Claude Code hooks (the ones mentioning `understand` / `get_concept`) with the new basic-memory hooks (mentioning `write_note` / `search_notes`)
+- Installs basic-memory via `uv tool` / `pipx` / `pip` if not already present
+- Creates `memory-graph/`, registers the project, starts the watch daemon
+- Adds `.basic-memory/` to `.gitignore`
+
+**Optional cleanup** after migration:
+1. Your MegaMemory knowledge graph (`.megamemory/knowledge.db`) is still on disk — gitignored but takes ~23MB. Delete if you want: `rm -rf .megamemory/`
+2. (Optional) Re-seed your new basic-memory graph from your `.beings/` MD files. Ask your Being: "seed your memory from my identity files" — it'll walk `MEMORY.md`, `TOOLS.md`, `CONVENTIONS.md`, etc. and write them as notes in `memory-graph/`.
 
 The v0.2.0 memory skill README and hooks used `understand`/`get_concept` — v0.2.1+ uses `write_note`/`search_notes`. The mental model is identical; only the implementation changed.
 

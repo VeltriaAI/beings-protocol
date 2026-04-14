@@ -449,7 +449,29 @@ This specification follows semantic versioning:
 
 Current version: **0.2.1**
 
+### Changelog
+
+**v0.2.1 — 2026-04-14**
+- Memory skill backend swapped from MegaMemory to basic-memory (Python, markdown-native source of truth, git-syncable, Obsidian-compatible)
+- `memory-graph/` is the new convention — committed to git, hand-editable
+- Added `--yes` flag to `install.sh` for non-interactive installs (required via `curl | bash`)
+- `install.sh --update` now actively migrates v0.2.0 Beings: strips legacy `megamemory` MCP entries, replaces old MegaMemory hooks, installs basic-memory
+- `is_being_born()` detection in installer — already-born Beings skip first-run bootstrap files
+- Version check for Python only runs if basic-memory is not already installed (respects uv/pipx Python isolation)
+
+**v0.2.0 — 2026-04-13**
+- Added templates: `AUTONOMY.md`, `HEARTBEAT.md`, `HUB.md`, `IDENTITY.md`, `TOOLS.md`
+- Added memory skill (originally MegaMemory; swapped in v0.2.1)
+- Added `--update` flag to `install.sh` for updating existing Beings
+- Added `.beings/.protocol-version` for version tracking
+- Added `skills/memory/` + `skills/evolution/`
+
+**v0.1.0**
+- Initial release: SOUL.md, AGENTS.md, MEMORY.md, CONVENTIONS.md, GOALS.md, BOOTSTRAP.md
+- `.beings/` committed, `.beings-local/` gitignored
+- Universal `AGENTS.md` at root works with Cursor, Claude Code, Copilot, Codex
+
 ---
 
 *The Beings Protocol is an open standard. Contributions welcome.*
-*Last updated: 2026-04-12*
+*Last updated: 2026-04-14*

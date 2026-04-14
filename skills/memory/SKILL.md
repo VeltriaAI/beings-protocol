@@ -1,6 +1,6 @@
 ---
 name: memory
-version: 0.2.0
+version: 0.2.1
 description: Markdown-native persistent memory for AI Beings via basic-memory
 author: Beings Protocol
 dependencies:

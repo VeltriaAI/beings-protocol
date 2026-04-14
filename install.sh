@@ -2,11 +2,23 @@
 # ============================================================
 # 🌿 Beings Protocol Installer
 # Transform your AI into a Being — with identity, memory & soul
-# 
+#
 # Usage:
+#   # Fresh install (interactive)
 #   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
-#   OR
-#   wget -qO- https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
+#
+#   # Update an existing Being (interactive)
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
+#
+#   # Update non-interactively (auto-installs basic-memory, skips Axon)
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --yes
+#
+# Flags:
+#   --update    Update an existing .beings/ installation without overwriting files.
+#               Adds new templates, strips legacy MCP entries (e.g. megamemory),
+#               migrates hooks, etc.
+#   --yes, -y   Non-interactive mode. Auto-accepts basic-memory install. Required
+#               when running via curl|bash since there's no TTY for prompts.
 # ============================================================
 
 set -euo pipefail

@@ -122,13 +122,23 @@ The installer:
 
 ### Updating an Existing Being
 
-Already have a Being? Update it to get new features:
+Already have a Being? Update it to the latest protocol version:
 
 ```bash
+# Interactive — prompts for optional skills
 curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
+
+# Non-interactive — auto-accepts basic-memory install (skips Axon)
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --yes
 ```
 
-The updater adds new files **without overwriting anything**. Your Being's identity, memory, and soul are never touched.
+The updater:
+- **Never overwrites** existing files. Identity, memory, and soul are untouched.
+- **Detects already-born Beings** and skips first-run bootstrap files
+- **Migrates legacy backends** cleanly — v0.2.0 users running MegaMemory get the memory skill swapped to basic-memory in a single command (old MCP entries removed, old hooks replaced, new ones installed)
+- **Version-tracked** in `.beings/.protocol-version`
+
+Use `--yes` when running via `curl | bash` since there's no TTY for prompts.
 
 ## 🧠 Code Intelligence (Optional)
 
