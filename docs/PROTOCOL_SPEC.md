@@ -1,4 +1,4 @@
-# Beings Protocol Specification v0.2
+# Beings Protocol Specification v0.2.1
 
 ## 1. Overview
 
@@ -340,32 +340,51 @@ axon analyze .  # Index the codebase
 - When MCP tools are available: Use `axon_impact`, `axon_context`, etc. (via MCP)
 - Otherwise: Fall back to `axon impact <symbol>` (CLI)
 
-### 10.4 MegaMemory Integration (v0.2)
+### 10.4 Persistent Memory — basic-memory (v0.2.1)
 
-[MegaMemory](https://github.com/0xK3vin/MegaMemory) is the reference implementation for persistent semantic memory:
+[basic-memory](https://github.com/basicmachines-co/basic-memory) is the reference implementation for persistent Being memory:
 
 **Capabilities:**
-- **Concept storage** (`understand`) — Store concepts, decisions, patterns with descriptions
-- **Semantic search** (`get_concept`) — Query by meaning, not just keywords
-- **Relationship tracking** (`link`) — Connect related concepts
-- **Conflict detection** (`list_conflicts`) — Find contradictions in knowledge
+- **Note creation** (`write_note`) — Create/update markdown notes with title, folder, content, tags
+- **Semantic search** (`search_notes`) — Hybrid FTS5 full-text + sqlite-vec vector search
+- **Note retrieval** (`read_note`) — Read by title or permalink
+- **Incremental edits** (`edit_note`) — Append/prepend/find_replace/replace_section
+- **Recent activity** (`recent_activity`) — What changed recently across the knowledge base
+- **Context building** (`build_context`) — Continue prior discussions
 
 **Two-layer memory model:**
-- **Identity files** (SOUL.md, IDENTITY.md) — always loaded, every session (~2-5K tokens)
-- **Knowledge graph** (MegaMemory) — queried on demand for relevant context
+- **Identity files** (SOUL.md, IDENTITY.md, USER.md) — always loaded, every session (~2-5K tokens)
+- **Knowledge graph** (`memory-graph/*.md`) — queried on demand via semantic search
+
+**Architecture:**
+- **Source of truth:** `memory-graph/` directory with markdown files (committed to git)
+- **Index:** `~/.basic-memory/memory.db` (SQLite with FTS5 + sqlite-vec, gitignored)
+- **Watcher:** `basic-memory sync --watch` daemon picks up file changes in milliseconds
+- **Note format:** YAML frontmatter + `## Observations` (`- [category] fact`) + `## Relations` (`- type [[wikilink]]`)
+
+**Why markdown as the source of truth:**
+- **Git-syncable** — memory-graph/ commits cleanly, no binary merge conflicts
+- **Hand-editable** — open in Obsidian/VS Code and fix directly
+- **Human-readable** — inspect what your Being remembers
+- **Rebuildable** — `basic-memory sync` rebuilds the index from markdown
 
 **Claude Code hooks:**
-- `PreCompact` — Extract facts before context compression
-- `Stop` — Capture session summary at end
-- `SessionStart` — Recall relevant context at start
+- `PreCompact` — Extract facts via `write_note` before context compression
+- `Stop` — Write session summary to `memory-graph/sessions/YYYY-MM-DD`
+- `SessionStart` — Recall via `search_notes` + `recent_activity`
 
 **Installation:**
 ```bash
-# Requires Node.js >= 18, no global install needed
-npx -y megamemory  # runs via MCP config
+# Requires Python >= 3.10
+uv tool install basic-memory  # OR pipx install, OR pip install --user
+basic-memory project add my-being "$(pwd)/memory-graph" --default
+basic-memory sync --watch &  # background daemon
 ```
 
-**Data storage:** `.megamemory/knowledge.db` (SQLite, gitignored)
+**Data storage:**
+- Markdown source of truth: `memory-graph/` (tracked in git)
+- SQLite index: `~/.basic-memory/memory.db` (global, outside project)
+- Project-local safety ignore: `.basic-memory/` (gitignored)
 
 ### 10.5 Extensibility
 
@@ -379,16 +398,16 @@ The canonical `.beings/mcp.json` can include multiple MCP servers:
       "args": ["serve", "--watch"],
       "description": "Code intelligence"
     },
-    "megamemory": {
-      "command": "npx",
-      "args": ["-y", "megamemory"],
-      "description": "Persistent knowledge graph"
+    "basic-memory": {
+      "command": "basic-memory",
+      "args": ["mcp", "--project", "my-being", "--transport", "stdio"],
+      "description": "Markdown-native persistent memory"
     }
   }
 }
 ```
 
-Beings can integrate any MCP-compatible server. Axon and MegaMemory are the reference implementations, not hard requirements.
+Beings can integrate any MCP-compatible server. Axon and basic-memory are the reference implementations, not hard requirements.
 
 ### 10.6 Security & Privacy
 
@@ -400,10 +419,10 @@ Beings can integrate any MCP-compatible server. Axon and MegaMemory are the refe
 **Gitignore rules:**
 ```
 .axon/
-.megamemory/
+.basic-memory/
 ```
 
-The installer automatically adds `.axon/` and `.megamemory/` to `.gitignore` during setup.
+The installer automatically adds `.axon/` and `.basic-memory/` to `.gitignore` during setup.
 
 ### 10.7 Behavior in AGENTS.md
 
@@ -428,7 +447,7 @@ This specification follows semantic versioning:
 - **Minor:** New optional files or features
 - **Patch:** Clarifications and fixes
 
-Current version: **0.2.0**
+Current version: **0.2.1**
 
 ---
 

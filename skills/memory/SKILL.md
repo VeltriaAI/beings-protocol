@@ -1,10 +1,10 @@
 ---
 name: memory
-version: 0.1.0
-description: Persistent semantic knowledge graph for AI Beings via MegaMemory
+version: 0.2.0
+description: Markdown-native persistent memory for AI Beings via basic-memory
 author: Beings Protocol
 dependencies:
-  - Node.js >= 18
-  - megamemory (npm)
+  - Python >= 3.10
+  - basic-memory (pip/uv install)
   - Claude Code (for hooks — optional)
 ---

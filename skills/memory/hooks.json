@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Before proceeding, extract key facts, decisions, and learnings from this session. Store them in MegaMemory using the understand tool with clear concept names and descriptions. Link related concepts together. This preserves knowledge that would otherwise be lost during compaction.'"
+            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'SESSION MEMORY: Capture a summary of this session in MegaMemory. Store: key decisions made, problems solved, unresolved questions, and any learnings about the project or user preferences. Use the understand tool to create or update concepts, and link to link related concepts together.'"
+            "command": "echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'MEMORY RECALL: Query MegaMemory for context relevant to this session. Use get_concept or list to recall recent decisions, active goals, and project context. This supplements your identity files (SOUL.md, IDENTITY.md) with semantic memory.'"
+            "command": "echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'"
           }
         ]
       }

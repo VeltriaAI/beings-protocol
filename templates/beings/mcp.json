@@ -5,10 +5,10 @@
       "args": ["serve", "--watch"],
       "description": "Code intelligence — structural search, impact analysis, dead code detection"
     },
-    "megamemory": {
-      "command": "npx",
-      "args": ["-y", "megamemory"],
-      "description": "Persistent knowledge graph — semantic search, concept storage, relationship tracking"
+    "basic-memory": {
+      "command": "basic-memory",
+      "args": ["mcp", "--project", "default", "--transport", "stdio"],
+      "description": "Markdown-native persistent memory — knowledge graph, semantic search, git-syncable"
     }
   }
 }

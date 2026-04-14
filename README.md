@@ -114,7 +114,7 @@ The installer:
 1. Creates `.beings/` and `.beings-local/` directories with all template files
 2. Creates `AGENTS.md` — the universal instruction file (works with Cursor, Claude Code, Copilot, Codex, and more)
 3. Detects your AI tools and creates tool-specific configs (`.cursor/rules/`, `CLAUDE.md`, etc.)
-4. Optionally sets up **MegaMemory** — persistent knowledge graph (semantic memory across sessions)
+4. Optionally sets up **basic-memory** — markdown-native persistent memory (git-syncable, Obsidian-compatible)
 5. Optionally sets up **Axon** — structural code intelligence
 6. Sets up the first-run experience (`BOOTSTRAP.md`)
 
@@ -148,24 +148,32 @@ Axon runs entirely locally — no API keys, no data leaving your machine.
 
 ## 🧠 Persistent Memory (Optional)
 
-The installer can optionally add **[MegaMemory](https://github.com/0xK3vin/MegaMemory)** — a knowledge graph that gives your Being semantic memory across sessions.
+The installer can optionally add **[basic-memory](https://github.com/basicmachines-co/basic-memory)** — markdown-native persistent memory with semantic search and git-syncable knowledge graphs.
 
 Without it, your Being re-reads all memory files every session (expensive in tokens). With it:
 
 ```
 Session starts
   → Being loads SOUL.md, IDENTITY.md (identity — always, ~2K tokens)
-  → Queries MegaMemory: "what context do I need?"
-  → Gets back: specific concepts, decisions, relationships
-  → 71x fewer tokens than loading everything blind
+  → Queries basic-memory: search_notes("what's relevant?")
+  → Gets back: specific notes from memory-graph/, decisions, links
+  → Orders of magnitude fewer tokens than loading everything blind
 ```
+
+### Why markdown as the source of truth
+
+- **Git-syncable** — commit `memory-graph/` to your repo. Switch machines, `git pull`, memory is there.
+- **Hand-editable** — open notes in Obsidian, VS Code, Vim. Fix a typo, correct a fact. Watcher reindexes automatically.
+- **Human-readable** — you can actually read what your Being remembers. No binary DB.
+- **Obsidian-compatible** — point a vault at `memory-graph/` and get a visual knowledge graph for free.
+- **Rebuildable** — the SQLite index is a cache. Lose it, run `basic-memory sync`, rebuilds from markdown.
 
 **Claude Code hooks** automate knowledge capture:
 - **PreCompact** — saves key facts before context compression (no more amnesia mid-session)
 - **Session End** — captures decisions, learnings, unresolved questions
-- **Session Start** — recalls relevant context from the knowledge graph
+- **Session Start** — recalls relevant context via `search_notes`
 
-Everything stays local — SQLite + in-process embeddings, no data leaves your machine.
+Everything stays local — SQLite FTS5 index + fastembed embeddings (bge-small-en-v1.5), no data leaves your machine.
 
 ## 🔧 Skills
 
@@ -173,7 +181,7 @@ Beings can have optional skills that extend their capabilities:
 
 | Skill | What it does |
 |-------|-------------|
-| **[Memory](skills/memory/)** | Persistent knowledge graph via MegaMemory — semantic memory across sessions |
+| **[Memory](skills/memory/)** | Markdown-native persistent memory via basic-memory — git-syncable, Obsidian-compatible |
 | **[Evolution](skills/evolution/)** | Self-modification via Claude Code CLI — the Being improves its own code via PRs |
 
 ## Before → After

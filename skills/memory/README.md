@@ -1,130 +1,205 @@
-# Memory Skill — Persistent Knowledge Graph for Beings
+# Memory Skill — Markdown-Native Persistent Memory
 
-Give your Being a semantic memory that survives across sessions, compactions, and even machine changes.
+Give your Being a persistent, semantic, git-syncable memory built on markdown files.
 
-Built on [MegaMemory](https://github.com/0xK3vin/MegaMemory) — a persistent knowledge graph with semantic search, in-process embeddings, and SQLite storage.
+Built on [basic-memory](https://github.com/basicmachines-co/basic-memory) — a knowledge management system that keeps markdown as the source of truth and builds a searchable index over it.
 
-## The Two-Layer Model
+## Why markdown as the source of truth
 
-Beings have two kinds of memory:
+The memory skill follows a two-layer model:
 
-| Layer | What | How | Token Cost |
-|-------|------|-----|------------|
-| **Identity files** | SOUL.md, IDENTITY.md, USER.md | Loaded every session, always | Fixed (~2-5K tokens) |
-| **Knowledge graph** | Concepts, decisions, patterns, relationships | Queried on demand via MegaMemory | Pay only for what you need |
+| Layer | What | Where | Role |
+|-------|------|-------|------|
+| **Identity files** | SOUL.md, IDENTITY.md, USER.md | `.beings/`, `.beings-local/` | Always loaded every session — who you are |
+| **Knowledge graph** | Notes, decisions, patterns, sessions | `memory-graph/*.md` | Queried on demand via semantic search |
 
-**Identity files are always loaded.** They're who you are — not optional.
+**Identity files stay always-loaded.** They're who you are — not optional.
 
-**MegaMemory replaces bulk loading.** Instead of loading all of MEMORY.md and every session log hoping something is relevant, the Being queries the graph for what it actually needs right now.
+**The knowledge graph lives in markdown files** inside `memory-graph/`. Every note is a real file you can open, read, edit, diff, commit, and share.
 
-### The flow
+### Why this matters
+
+1. **Git-syncable** — commit `memory-graph/` to your repo. Your Being's memory travels with the project. Switch machines, `git pull`, memory is there.
+2. **Hand-editable** — open a note in Obsidian, VS Code, Vim, whatever. Fix a typo, correct a fact, add context. The watcher reindexes automatically.
+3. **Human-readable** — you can actually read what your Being remembers. No binary DB to inspect.
+4. **Obsidian-compatible** — point an Obsidian vault at `memory-graph/` and get a visual knowledge graph for free.
+5. **Rebuildable** — the SQLite index is a cache. Lose it, run `basic-memory sync`, it rebuilds from the markdown.
+
+## The note format
+
+Every memory is a markdown file like this:
+
+```markdown
+---
+title: DocForge Skill
+type: note
+permalink: products/docforge-skill
+tags: [skill, infrax-ai]
+---
+
+# DocForge Skill
+
+Professional PDF proposal generator at ~/skills/docforge/.
+
+## Observations
+- [location] ~/skills/docforge/
+- [purpose] PDF proposal generator for InfraX AI deals
+- [rule] Always use --no-toc flag unless TOC explicitly requested
+- [contact] contact@infrax.ai, +91-8826140817
+
+## Relations
+- implements [[Deal Pipeline]]
+- outputs_to [[OneDrive PreSales]]
+- depends_on [[Playwright]]
+```
+
+**Structure:**
+- **YAML frontmatter** — title, type, permalink (URL slug), tags
+- **Observations** — bulleted `- [category] fact` lines. Machine-readable structured claims.
+- **Relations** — `[[wikilinks]]` become edges in the knowledge graph. The word before the link (`implements`, `depends_on`, etc.) is the relationship type.
+
+Write notes in your own words. basic-memory indexes them into a searchable graph.
+
+## How it works
 
 ```
-Session starts
-  → Being loads SOUL.md, IDENTITY.md, USER.md (identity — always)
-  → Being queries MegaMemory: "what's relevant?"
-  → Gets back: specific concepts, decisions, context
-  → Only reads specific MD files if full detail is needed
+┌──────────────────────────────────────────────┐
+│  memory-graph/                               │  ← Source of truth
+│  ├── identity/treta-himani.md                │    Committed to git
+│  ├── team/naturnest-roster.md                │    Hand-editable
+│  ├── products/docforge-skill.md              │    Obsidian-compatible
+│  └── decisions/treta-himani-merge.md         │
+└──────────────────────────────────────────────┘
+            ↓ watcher (inotify/fsevents)
+┌──────────────────────────────────────────────┐
+│  ~/.basic-memory/memory.db                   │  ← Index (cache)
+│  ├── FTS5 full-text search                   │    Rebuildable
+│  ├── sqlite-vec embeddings                   │    Gitignored
+│  └── entities + observations + relations     │    Global, per-project isolated
+└──────────────────────────────────────────────┘
+            ↓ MCP tools
+┌──────────────────────────────────────────────┐
+│  Your Being                                  │
+│  write_note, search_notes, read_note, ...    │
+└──────────────────────────────────────────────┘
 ```
 
-### Where knowledge lives
+Two processes keep this working:
 
-- **MD files** = episodic memory (what happened, when, full detail)
-- **MegaMemory** = semantic memory (what I know, how things connect)
+1. **`basic-memory sync --watch`** — background daemon. Installed once, runs forever. Watches `memory-graph/` for changes (via fsevents/inotify) and reindexes automatically. Any edit from any tool — your Being via MCP, you via Obsidian, `git pull` from another machine — is picked up within milliseconds.
 
-This mirrors how human memory works — you don't replay every day to remember how to do your job.
+2. **`basic-memory mcp --project <name>`** — MCP server spawned per-session by Claude Code. Reads from the same SQLite index the watcher keeps fresh.
 
-## Claude Code Hooks
+## MCP tools
 
-The memory skill includes three hooks that automate knowledge capture:
+When your Being is connected via MCP, it can use these tools:
+
+| Tool | Purpose |
+|------|---------|
+| `write_note` | Create or update a markdown note (with title, folder, content, tags) |
+| `read_note` | Read a note by title or permalink |
+| `search_notes` | Hybrid FTS5 + semantic search across all notes |
+| `edit_note` | Incremental edits (append/prepend/find_replace/replace_section) |
+| `view_note` | Formatted view of a note |
+| `move_note` / `delete_note` | Move or delete notes |
+| `recent_activity` | What changed recently |
+| `build_context` | Get context for continuing a prior discussion |
+| `list_memory_projects` | List registered projects |
+
+## Claude Code hooks
+
+Three hooks automate memory capture and recall:
 
 ### PreCompact
-Fires before context compression. Extracts key facts, decisions, and learnings from the conversation before they're lost to compaction.
+Fires before context is compressed. The Being extracts key decisions, learnings, and facts from the session and writes them to `memory-graph/` via `write_note`. Preserves knowledge that would otherwise be lost to compaction.
 
 ### Stop (Session End)
-Fires when a session ends. Captures session summary — decisions made, problems solved, unresolved questions.
+Fires when a session ends. The Being writes a session summary note to `memory-graph/sessions/YYYY-MM-DD.md` capturing what was built, decisions made, and unresolved questions.
 
 ### SessionStart
-Fires when a new session starts. Queries MegaMemory for relevant context to supplement identity files.
+Fires when a new session starts (including resumes). The Being queries `search_notes` and `recent_activity` for context relevant to the conversation, supplementing the always-loaded identity files.
+
+Hooks use `echo` to inject instructions into the Being's context. The Being then uses MCP tools to act on those instructions.
 
 ## Installation
 
 ### Via install.sh (recommended)
 
 ```bash
+# Fresh install
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
+
+# Update existing Being
 curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
 ```
 
-The installer will offer to set up MegaMemory during installation or update.
+The installer will:
+1. Install `basic-memory` via `uv tool` (preferred), `pipx`, or `pip --user`
+2. Create `memory-graph/` in your project
+3. Register the project with basic-memory (using folder name)
+4. Add basic-memory to your MCP configs (`.beings/mcp.json`, `.mcp.json`, `.cursor/mcp.json`)
+5. Install Claude Code hooks into `.claude/settings.local.json` if Claude Code is detected
+6. Start the `basic-memory sync --watch` daemon in the background
+7. Add `.basic-memory/` to `.gitignore`
 
 ### Manual setup
 
-1. Ensure Node.js >= 18 is installed
-2. Add MegaMemory to your MCP config (`.mcp.json` for Claude Code):
-   ```json
-   {
-     "mcpServers": {
-       "megamemory": {
-         "command": "npx",
-         "args": ["-y", "megamemory"],
-         "description": "Persistent knowledge graph"
-       }
-     }
-   }
-   ```
-3. Copy hooks from `hooks.json` into your `.claude/settings.local.json`
-4. Add `.megamemory/` to your `.gitignore`
+```bash
+# 1. Install basic-memory (prefer uv)
+uv tool install basic-memory
+# OR: pipx install basic-memory
+# OR: pip install --user basic-memory
 
-## Rebuilding Memory
+# 2. Create the memory folder and register project
+mkdir -p memory-graph
+basic-memory project add my-being "$(pwd)/memory-graph" --default
 
-The knowledge graph is a **local cache** — the MD files are the source of truth. You can rebuild it any time from your committed files.
+# 3. Start the watcher
+basic-memory sync --watch &
 
-### When to rebuild
+# 4. Add to your MCP config (.mcp.json for Claude Code):
+```
 
-- **New machine** — fresh environment with no `.megamemory/` data
-- **Cache corruption** — DB is broken or lost
-- **User request** — "rebuild your memory", "re-ingest your knowledge"
-- **After bulk MD updates** — large batch of new knowledge written to files
+```json
+{
+  "mcpServers": {
+    "basic-memory": {
+      "command": "basic-memory",
+      "args": ["mcp", "--project", "my-being", "--transport", "stdio"],
+      "description": "Markdown-native persistent memory"
+    }
+  }
+}
+```
 
-### How it works
+```bash
+# 5. Add .basic-memory/ to .gitignore (safety net — the global index lives in ~/.basic-memory/)
+echo ".basic-memory/" >> .gitignore
+```
 
-The Being walks its MD files in priority order (MEMORY.md, TOOLS.md, CONVENTIONS.md, then session logs), extracts concepts and relationships, and writes them to MegaMemory via the `understand` and `link` tools.
+## Rebuilding
 
-Session logs get special handling — only decisions, learnings, and incidents are extracted (not verbatim).
+See [REBUILD.md](REBUILD.md) — with basic-memory, rebuild is a single command since the markdown files ARE the source of truth.
 
-See [REBUILD.md](REBUILD.md) for the full procedure.
+## Obsidian integration
 
-### User-triggered rebuild
+Point an Obsidian vault at your `memory-graph/` directory. You get:
+- Visual graph view of all your Being's notes and their relations
+- Wiki-link autocomplete when editing
+- Full-text search across your Being's mind
+- Hand-edit memories and see the watcher reindex them in real time
 
-Just ask the Being:
-- "Rebuild your memory"
-- "Re-ingest your knowledge"
-- "Load your memory from files"
+## Migration from MegaMemory (v0.2.0 users)
 
-Or for targeted rebuilds:
-- "Ingest today's session"
-- "Refresh MEMORY.md into the graph"
-- "Ingest everything about [topic]"
+If you were running the v0.2.0 memory skill with MegaMemory:
 
-## MCP Tools
+1. Run `bash install.sh --update` to install basic-memory alongside
+2. (Optional) Export your MegaMemory concepts as markdown notes using the Being to walk the graph and call `write_note` for each concept
+3. Remove the old `megamemory` entry from your MCP configs manually
+4. Delete `.megamemory/` directory if present (gitignored anyway)
 
-MegaMemory exposes these tools via MCP:
+The v0.2.0 memory skill README and hooks used `understand`/`get_concept` — v0.2.1+ uses `write_note`/`search_notes`. The mental model is identical; only the implementation changed.
 
-| Tool | Purpose |
-|------|---------|
-| `understand` | Create or update a concept with description |
-| `get_concept` | Retrieve a specific concept by name |
-| `create` | Create a new concept entity |
-| `update` | Update an existing concept |
-| `link` | Create a relationship between concepts |
-| `remove` | Remove a concept |
-| `list_conflicts` | Find conflicting information |
-| `resolve_conflict` | Resolve a detected conflict |
-
-## Data
-
-Everything persists in `.megamemory/knowledge.db` (SQLite). The embedding model (~23MB) downloads automatically on first use.
-
-## First Implementation
+## First implementation
 
 Part of the [Beings Protocol](https://github.com/VeltriaAI/beings-protocol) — giving AI Beings persistent identity, memory, and soul.

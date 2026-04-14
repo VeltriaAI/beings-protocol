@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-PROTOCOL_VERSION="0.2.0"
+PROTOCOL_VERSION="0.2.1"
 UPDATE_MODE=false
 
 # Colors
@@ -367,33 +367,27 @@ ask_tools() {
 }
 
 # ============================================================
-# Update MCP config (add megamemory if missing)
+# Update MCP config (add basic-memory if missing)
 # ============================================================
-add_megamemory_to_mcp() {
+add_basic_memory_to_mcp() {
   local file="$1"
-  local server_key="$2"  # "servers" for .beings/mcp.json, "mcpServers" for .mcp.json
+  local server_key="$2"     # "servers" for .beings/mcp.json, "mcpServers" for .mcp.json
+  local project_name="$3"
 
-  if [ ! -f "$file" ]; then
-    return 1
-  fi
+  [ ! -f "$file" ] && return 1
+  grep -q '"basic-memory"' "$file" 2>/dev/null && return 0  # already present
 
-  if grep -q "megamemory" "$file" 2>/dev/null; then
-    return 0  # already present
-  fi
-
-  # Use Python if available for reliable JSON merge
   if command -v python3 &>/dev/null; then
     python3 -c "
-import json, sys
+import json
 with open('$file') as f:
     data = json.load(f)
 key = '$server_key'
-if key not in data:
-    data[key] = {}
-data[key]['megamemory'] = {
-    'command': 'npx',
-    'args': ['-y', 'megamemory'],
-    'description': 'Persistent knowledge graph — semantic search, concept storage, relationship tracking'
+data.setdefault(key, {})
+data[key]['basic-memory'] = {
+    'command': 'basic-memory',
+    'args': ['mcp', '--project', '$project_name', '--transport', 'stdio'],
+    'description': 'Markdown-native persistent memory — knowledge graph, semantic search, git-syncable'
 }
 with open('$file', 'w') as f:
     json.dump(data, f, indent=2)
@@ -402,147 +396,224 @@ with open('$file', 'w') as f:
     return $?
   fi
 
-  # Fallback: warn user to add manually
   print_warn "Could not auto-update ${file} (Python3 not available)"
-  print_info "Add megamemory manually — see skills/memory/README.md"
+  print_info "Add basic-memory manually — see skills/memory/README.md"
   return 1
 }
 
 update_mcp_config() {
+  local project_name="$1"
   local updated=false
 
-  # Canonical config
   if [ -f ".beings/mcp.json" ]; then
-    if add_megamemory_to_mcp ".beings/mcp.json" "servers"; then
-      print_step "Updated ${BOLD}.beings/mcp.json${NC} with MegaMemory"
+    if add_basic_memory_to_mcp ".beings/mcp.json" "servers" "$project_name"; then
+      print_step "Updated ${BOLD}.beings/mcp.json${NC} with basic-memory"
       updated=true
     fi
   fi
 
-  # Claude Code
   if [ -f ".mcp.json" ]; then
-    if add_megamemory_to_mcp ".mcp.json" "mcpServers"; then
-      print_step "Updated ${BOLD}.mcp.json${NC} with MegaMemory"
+    if add_basic_memory_to_mcp ".mcp.json" "mcpServers" "$project_name"; then
+      print_step "Updated ${BOLD}.mcp.json${NC} with basic-memory"
       updated=true
     fi
   fi
 
-  # Cursor
   if [ -f ".cursor/mcp.json" ]; then
-    if add_megamemory_to_mcp ".cursor/mcp.json" "mcpServers"; then
-      print_step "Updated ${BOLD}.cursor/mcp.json${NC} with MegaMemory"
+    if add_basic_memory_to_mcp ".cursor/mcp.json" "mcpServers" "$project_name"; then
+      print_step "Updated ${BOLD}.cursor/mcp.json${NC} with basic-memory"
       updated=true
     fi
   fi
 
-  if ! $updated; then
-    print_info "No existing MCP configs found to update"
-  fi
+  $updated || print_info "No existing MCP configs found to update"
 }
 
 # ============================================================
-# Memory Skill (MegaMemory — Optional)
+# Memory Skill (basic-memory — Optional)
 # ============================================================
 setup_memory_skill() {
   local detected_tools="$1"
 
-  # Check Node.js >= 18
-  if ! command -v node &>/dev/null; then
-    print_warn "Node.js not found — skipping MegaMemory"
-    print_info "Install Node.js >= 18 and re-run with --update to add memory skill"
+  # 1. Check Python >= 3.10
+  if ! command -v python3 &>/dev/null; then
+    print_warn "Python3 not found — skipping basic-memory"
+    print_info "Install Python >= 3.10 and re-run with --update to add memory skill"
     return
   fi
 
-  local node_major
-  node_major=$(node -e "console.log(process.version.slice(1).split('.')[0])" 2>/dev/null || echo "0")
-  if [ "$node_major" -lt 18 ]; then
-    print_warn "Node.js >= 18 required (found v${node_major}) — skipping MegaMemory"
+  local python_major python_minor
+  python_major=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+  python_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
+  if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
+    print_warn "Python >= 3.10 required (found ${python_major}.${python_minor}) — skipping basic-memory"
     return
   fi
 
+  # 2. Prompt
   echo ""
   echo -e "  ${BOLD}🧠 Persistent Memory (Optional)${NC}\n"
-  echo -e "  Give your Being a knowledge graph that survives across sessions?"
-  echo -e "  This sets up ${BOLD}MegaMemory${NC} — semantic search over concepts, decisions, and patterns.\n"
-  echo -e "  ${DIM}(Local SQLite + in-process embeddings, no data leaves your machine)${NC}\n"
+  echo -e "  Give your Being git-syncable markdown memory with semantic search?"
+  echo -e "  This installs ${BOLD}basic-memory${NC} — markdown files as source of truth,"
+  echo -e "  Obsidian-compatible, hand-editable, git-syncable across machines.\n"
+  echo -e "  ${DIM}(Local SQLite index + fastembed embeddings, no data leaves your machine)${NC}\n"
 
   local install_memory=""
   if can_prompt; then
-    read_input "  Install MegaMemory? (Y/n) " install_memory
+    read_input "  Install basic-memory? (Y/n) " install_memory
   else
-    print_info "Non-interactive mode — skipping memory skill (add later with: install.sh --update)"
+    print_info "Non-interactive mode — skipping memory skill (add later with --update)"
     return
   fi
+  [[ "$install_memory" == [nN]* ]] && { print_info "Skipped memory skill — add later with --update"; return; }
 
-  if [[ "$install_memory" == [nN]* ]]; then
-    print_info "Skipped memory skill — you can add it later with --update"
-    return
+  # 3. Install basic-memory if not already present
+  if ! command -v basic-memory &>/dev/null; then
+    print_info "Installing basic-memory..."
+    local install_ok=false
+    if command -v uv &>/dev/null; then
+      uv tool install basic-memory >/dev/null 2>&1 && install_ok=true
+    fi
+    if ! $install_ok && command -v pipx &>/dev/null; then
+      pipx install basic-memory >/dev/null 2>&1 && install_ok=true
+    fi
+    if ! $install_ok && command -v pip &>/dev/null; then
+      pip install --user basic-memory >/dev/null 2>&1 && install_ok=true
+    fi
+
+    if ! $install_ok; then
+      print_warn "Could not install basic-memory (need uv, pipx, or pip)"
+      print_info "Install manually: ${DIM}uv tool install basic-memory${NC}"
+      print_info "Docs: https://docs.basicmemory.com/"
+      return
+    fi
+
+    if ! command -v basic-memory &>/dev/null; then
+      print_warn "basic-memory installed but not on PATH"
+      print_info "Add ${DIM}~/.local/bin${NC} to your PATH and re-run --update"
+      return
+    fi
+    print_step "Installed ${BOLD}basic-memory${NC}"
+  else
+    local bm_version
+    bm_version=$(basic-memory --version 2>/dev/null | tail -1 || echo "")
+    print_info "basic-memory already installed ${DIM}${bm_version}${NC}"
   fi
 
-  # Verify npx works (no global install needed)
-  if ! command -v npx &>/dev/null; then
-    print_warn "npx not found — install npm and re-run"
-    return
+  # 4. Create memory-graph/ directory
+  if [ ! -d "memory-graph" ]; then
+    mkdir -p memory-graph
+    touch memory-graph/.gitkeep
+    print_step "Created ${BOLD}memory-graph/${NC} (markdown source of truth)"
   fi
 
-  # Update MCP configs
-  update_mcp_config
+  # 5. Register project with basic-memory
+  local project_name="${PWD##*/}"
+  if basic-memory project list 2>/dev/null | grep -q " ${project_name} "; then
+    print_info "Project ${BOLD}${project_name}${NC} already registered"
+  else
+    if basic-memory project add "$project_name" "$(pwd)/memory-graph" --default >/dev/null 2>&1; then
+      print_step "Registered project ${BOLD}${project_name}${NC} with basic-memory"
+    else
+      print_warn "Could not auto-register project — run manually:"
+      print_info "  ${DIM}basic-memory project add ${project_name} \$(pwd)/memory-graph --default${NC}"
+    fi
+  fi
 
-  # Create Claude Code MCP config if it doesn't exist but Claude Code is detected
+  # 6. Update existing MCP configs
+  update_mcp_config "$project_name"
+
+  # 7. Create Claude Code MCP config if it doesn't exist but Claude Code is detected
   if [[ "$detected_tools" == *claude-code* ]] || [ -f "CLAUDE.md" ]; then
     if [ ! -f ".mcp.json" ]; then
-      cat > .mcp.json <<'EOF'
+      cat > .mcp.json <<EOF
 {
   "mcpServers": {
-    "megamemory": {
-      "command": "npx",
-      "args": ["-y", "megamemory"],
-      "description": "Persistent knowledge graph — semantic search, concept storage, relationship tracking"
+    "basic-memory": {
+      "command": "basic-memory",
+      "args": ["mcp", "--project", "${project_name}", "--transport", "stdio"],
+      "description": "Markdown-native persistent memory — knowledge graph, semantic search, git-syncable"
     }
   }
 }
 EOF
-      print_step "Created ${BOLD}.mcp.json${NC} with MegaMemory"
+      print_step "Created ${BOLD}.mcp.json${NC} with basic-memory"
     fi
   fi
 
-  # Create Cursor MCP config if it doesn't exist but Cursor is detected
+  # 8. Create Cursor MCP config if it doesn't exist but Cursor is detected
   if [[ "$detected_tools" == *cursor* ]] || [ -d ".cursor" ]; then
     if [ ! -f ".cursor/mcp.json" ]; then
       mkdir -p .cursor
-      cat > .cursor/mcp.json <<'EOF'
+      cat > .cursor/mcp.json <<EOF
 {
   "mcpServers": {
-    "megamemory": {
-      "command": "npx",
-      "args": ["-y", "megamemory"],
-      "description": "Persistent knowledge graph — semantic search, concept storage, relationship tracking"
+    "basic-memory": {
+      "command": "basic-memory",
+      "args": ["mcp", "--project", "${project_name}", "--transport", "stdio"],
+      "description": "Markdown-native persistent memory — knowledge graph, semantic search, git-syncable"
     }
   }
 }
 EOF
-      print_step "Created ${BOLD}.cursor/mcp.json${NC} with MegaMemory"
+      print_step "Created ${BOLD}.cursor/mcp.json${NC} with basic-memory"
     fi
   fi
 
-  # Set up Claude Code hooks if Claude Code is detected
+  # 9. Set up Claude Code hooks if detected
   if [[ "$detected_tools" == *claude-code* ]] || [ -f "CLAUDE.md" ]; then
     setup_memory_hooks
   fi
 
-  # Update .gitignore for .megamemory/
+  # 10. Start basic-memory sync --watch daemon if not already running
+  local watch_running=false
+  if [ -f "$HOME/.basic-memory/watch-status.json" ]; then
+    if python3 -c "
+import json, os
+try:
+    with open(os.path.expanduser('~/.basic-memory/watch-status.json')) as f:
+        d = json.load(f)
+    pid = d.get('pid')
+    running = d.get('running', False)
+    if running and pid:
+        os.kill(pid, 0)  # signal 0 = just check, don't kill
+        exit(0)
+except Exception:
+    pass
+exit(1)
+" 2>/dev/null; then
+      watch_running=true
+    fi
+  fi
+
+  if $watch_running; then
+    print_info "basic-memory watch daemon already running"
+  else
+    print_info "Starting basic-memory sync --watch in background..."
+    nohup basic-memory sync --watch >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    print_step "Started ${BOLD}basic-memory sync --watch${NC}"
+  fi
+
+  # 11. Update .gitignore
   if [ -f ".gitignore" ]; then
-    if ! grep -q "^\.megamemory/" .gitignore 2>/dev/null; then
-      echo "" >> .gitignore
-      echo "# MegaMemory knowledge graph data" >> .gitignore
-      echo ".megamemory/" >> .gitignore
-      print_step "Added ${BOLD}.megamemory/${NC} to .gitignore"
+    if ! grep -q "^\.basic-memory/" .gitignore 2>/dev/null; then
+      {
+        echo ""
+        echo "# basic-memory — SQLite index lives in ~/.basic-memory/ (outside repo),"
+        echo "# but ignore any project-local cache/index if it ever appears here."
+        echo "# The markdown source of truth in memory-graph/ IS tracked."
+        echo ".basic-memory/"
+        echo "memory-graph/.basic-memory/"
+      } >> .gitignore
+      print_step "Added ${BOLD}.basic-memory/${NC} to .gitignore"
     fi
   fi
 
   echo ""
   print_step "${GREEN}Memory skill ready!${NC}"
-  print_info "Your Being now has persistent semantic memory across sessions"
+  print_info "Your Being has markdown-native persistent memory"
+  print_info "Edit notes directly in ${BOLD}memory-graph/${NC} — the watcher reindexes automatically"
 }
 
 # ============================================================
@@ -553,43 +624,46 @@ setup_memory_hooks() {
 
   mkdir -p .claude
 
-  if [ -f "$settings_file" ] && grep -q "megamemory\|MegaMemory\|MEMORY PRESERVATION" "$settings_file" 2>/dev/null; then
+  if [ -f "$settings_file" ] && grep -q "MEMORY PRESERVATION\|MEMORY RECALL" "$settings_file" 2>/dev/null; then
     print_info "Memory hooks already configured — skipping"
     return
   fi
 
   # Try Python merge if settings file exists with existing hooks
-  if [ -f "$settings_file" ] && grep -q '"hooks"' "$settings_file" 2>/dev/null; then
-    if command -v python3 &>/dev/null; then
-      python3 -c "
+  if [ -f "$settings_file" ] && command -v python3 &>/dev/null; then
+    python3 -c "
 import json
+from pathlib import Path
 
 hooks_to_add = {
     'PreCompact': [{
         'matcher': '',
         'hooks': [{
             'type': 'command',
-            'command': \"echo 'MEMORY PRESERVATION: Context is about to be compressed. Before proceeding, extract key facts, decisions, and learnings from this session. Store them in MegaMemory using the understand tool with clear concept names and descriptions. Link related concepts together. This preserves knowledge that would otherwise be lost during compaction.'\"
+            'command': \"echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'\"
         }]
     }],
     'Stop': [{
         'matcher': '',
         'hooks': [{
             'type': 'command',
-            'command': \"echo 'SESSION MEMORY: Capture a summary of this session in MegaMemory. Store: key decisions made, problems solved, unresolved questions, and any learnings about the project or user preferences. Use the understand tool to create or update concepts, and link to link related concepts together.'\"
+            'command': \"echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'\"
         }]
     }],
     'SessionStart': [{
         'matcher': '',
         'hooks': [{
             'type': 'command',
-            'command': \"echo 'MEMORY RECALL: Query MegaMemory for context relevant to this session. Use get_concept or list to recall recent decisions, active goals, and project context. This supplements your identity files (SOUL.md, IDENTITY.md) with semantic memory.'\"
+            'command': \"echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'\"
         }]
     }]
 }
 
-with open('$settings_file') as f:
-    data = json.load(f)
+path = Path('$settings_file')
+if path.exists():
+    data = json.loads(path.read_text())
+else:
+    data = {}
 
 if 'hooks' not in data:
     data['hooks'] = {}
@@ -597,25 +671,23 @@ if 'hooks' not in data:
 for event, hook_list in hooks_to_add.items():
     if event not in data['hooks']:
         data['hooks'][event] = []
-    data['hooks'][event].extend(hook_list)
+    # Only append if not already there (simple check: look for MEMORY keyword in commands)
+    already = any(
+        'MEMORY' in (h.get('hooks', [{}])[0].get('command', '') if h.get('hooks') else '')
+        for h in data['hooks'][event]
+    )
+    if not already:
+        data['hooks'][event].extend(hook_list)
 
-with open('$settings_file', 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
+path.write_text(json.dumps(data, indent=2) + '\n')
 " 2>/dev/null
-      if [ $? -eq 0 ]; then
-        print_step "Merged memory hooks into ${BOLD}${settings_file}${NC}"
-        return
-      fi
+    if [ $? -eq 0 ]; then
+      print_step "Merged memory hooks into ${BOLD}${settings_file}${NC}"
+      return
     fi
-
-    # Fallback: print instructions
-    print_warn "Existing hooks found — please add memory hooks manually"
-    print_info "See ${BOLD}skills/memory/hooks.json${NC} for the hook configuration"
-    return
   fi
 
-  # No existing settings or no hooks — create/overwrite with hooks
+  # No existing settings or Python unavailable — write a fresh file
   cat > "$settings_file" <<'HOOKS_EOF'
 {
   "hooks": {
@@ -625,7 +697,7 @@ with open('$settings_file', 'w') as f:
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Before proceeding, extract key facts, decisions, and learnings from this session. Store them in MegaMemory using the understand tool with clear concept names and descriptions. Link related concepts together. This preserves knowledge that would otherwise be lost during compaction.'"
+            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'"
           }
         ]
       }
@@ -636,7 +708,7 @@ with open('$settings_file', 'w') as f:
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'SESSION MEMORY: Capture a summary of this session in MegaMemory. Store: key decisions made, problems solved, unresolved questions, and any learnings about the project or user preferences. Use the understand tool to create or update concepts, and link to link related concepts together.'"
+            "command": "echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'"
           }
         ]
       }
@@ -647,7 +719,7 @@ with open('$settings_file', 'w') as f:
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'MEMORY RECALL: Query MegaMemory for context relevant to this session. Use get_concept or list to recall recent decisions, active goals, and project context. This supplements your identity files (SOUL.md, IDENTITY.md) with semantic memory.'"
+            "command": "echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'"
           }
         ]
       }
@@ -810,8 +882,8 @@ print_update_summary() {
   echo -e "    ${CYAN}HUB.md${NC}          ${DIM}← Being-to-Being communication${NC}"
   echo -e "    ${CYAN}IDENTITY.md${NC}     ${DIM}← Quick reference card${NC}"
   echo -e "    ${CYAN}TOOLS.md${NC}        ${DIM}← Environment config${NC}"
-  if grep -q "megamemory" ".mcp.json" 2>/dev/null || grep -q "megamemory" ".cursor/mcp.json" 2>/dev/null; then
-    echo -e "    ${CYAN}MegaMemory${NC}      ${DIM}← Persistent knowledge graph (MCP)${NC}"
+  if grep -q '"basic-memory"' ".mcp.json" 2>/dev/null || grep -q '"basic-memory"' ".cursor/mcp.json" 2>/dev/null; then
+    echo -e "    ${CYAN}basic-memory${NC}    ${DIM}← Markdown-native persistent memory (MCP)${NC}"
   fi
   echo ""
   echo -e "  ${BOLD}Note:${NC} Existing files were ${BOLD}never overwritten${NC}."
