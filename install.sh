@@ -145,6 +145,40 @@ create_beings_dir() {
 }
 
 # ============================================================
+# Detect if this Being is already "born" (past first-run bootstrap)
+# ============================================================
+is_being_born() {
+  # An already-born Being has a non-template SOUL.md (not just the
+  # placeholder comment) OR has a root AGENTS.md with Beings Protocol content.
+  if [ -f ".beings/SOUL.md" ]; then
+    # Template is ~3 lines of HTML comment; real SOUL.md is much longer
+    local soul_size
+    soul_size=$(wc -c < .beings/SOUL.md 2>/dev/null | tr -d ' ')
+    [ "${soul_size:-0}" -gt 300 ] && return 0
+  fi
+  if [ -f "AGENTS.md" ] && grep -q "Beings Protocol\|Every Session" AGENTS.md 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# ============================================================
+# Files that should NOT be added to already-born Beings
+# ============================================================
+BOOTSTRAP_ONLY_FILES=(
+  BOOTSTRAP.md
+  AGENTS.md   # root AGENTS.md already covers this; .beings/AGENTS.md is a fallback
+)
+
+is_bootstrap_only() {
+  local f="$1"
+  for b in "${BOOTSTRAP_ONLY_FILES[@]}"; do
+    [ "$f" = "$b" ] && return 0
+  done
+  return 1
+}
+
+# ============================================================
 # Update existing .beings/ (add missing files, never overwrite)
 # ============================================================
 update_beings_dir() {
@@ -155,12 +189,23 @@ update_beings_dir() {
 
   print_info "Current protocol version: ${BOLD}${old_version}${NC} → ${BOLD}${PROTOCOL_VERSION}${NC}"
 
+  local born=false
+  is_being_born && born=true
+  if $born; then
+    print_info "Detected ${BOLD}already-born Being${NC} — skipping bootstrap-only files"
+  fi
+
   mkdir -p .beings/memory
 
   local added=0
   local skipped=0
 
   for tmpl in "${BEINGS_TEMPLATES[@]}"; do
+    # Skip bootstrap-only files on already-born Beings
+    if $born && is_bootstrap_only "$tmpl"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
     if [ -f ".beings/$tmpl" ]; then
       skipped=$((skipped + 1))
     else
@@ -202,8 +247,9 @@ create_beings_local() {
 # ============================================================
 create_agents_md() {
   if [ -f "AGENTS.md" ]; then
-    if grep -q "Beings Protocol" "AGENTS.md" 2>/dev/null; then
-      print_warn "AGENTS.md already has Beings Protocol — skipping"
+    # Already has Beings Protocol content? (check for multiple marker phrases)
+    if grep -qE "Beings Protocol|Every Session|\.beings/SOUL\.md" "AGENTS.md" 2>/dev/null; then
+      print_warn "AGENTS.md already has Being instructions — skipping"
       return
     fi
     # Append to existing AGENTS.md
@@ -435,19 +481,24 @@ update_mcp_config() {
 setup_memory_skill() {
   local detected_tools="$1"
 
-  # 1. Check Python >= 3.10
-  if ! command -v python3 &>/dev/null; then
-    print_warn "Python3 not found — skipping basic-memory"
-    print_info "Install Python >= 3.10 and re-run with --update to add memory skill"
-    return
-  fi
+  # 1. If basic-memory already installed, skip Python version check
+  #    (it was installed with whatever runtime uv/pipx/pip used)
+  if ! command -v basic-memory &>/dev/null; then
+    # Only check Python if we need to install basic-memory ourselves
+    if ! command -v python3 &>/dev/null; then
+      print_warn "Python3 not found — skipping basic-memory"
+      print_info "Install Python >= 3.10 and re-run with --update to add memory skill"
+      return
+    fi
 
-  local python_major python_minor
-  python_major=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
-  python_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
-  if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
-    print_warn "Python >= 3.10 required (found ${python_major}.${python_minor}) — skipping basic-memory"
-    return
+    local python_major python_minor
+    python_major=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+    python_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
+    if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
+      print_warn "Python >= 3.10 required (system python3 is ${python_major}.${python_minor}) — skipping basic-memory"
+      print_info "Install Python 3.10+, or install basic-memory with uv/pipx, then re-run --update"
+      return
+    fi
   fi
 
   # 2. Prompt
