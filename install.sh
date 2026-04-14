@@ -13,6 +13,7 @@ set -euo pipefail
 
 PROTOCOL_VERSION="0.2.1"
 UPDATE_MODE=false
+YES_MODE=false
 
 # Colors
 GREEN='\033[0;32m'
@@ -413,6 +414,36 @@ ask_tools() {
 }
 
 # ============================================================
+# Remove a legacy server key from an MCP config file
+# ============================================================
+remove_server_from_mcp() {
+  local file="$1"
+  local server_key="$2"     # "servers" or "mcpServers"
+  local target="$3"         # e.g. "megamemory"
+
+  [ ! -f "$file" ] && return 1
+  grep -q "\"$target\"" "$file" 2>/dev/null || return 1
+
+  if command -v python3 &>/dev/null; then
+    python3 -c "
+import json
+from pathlib import Path
+path = Path('$file')
+data = json.loads(path.read_text())
+key = '$server_key'
+removed = False
+if key in data and '$target' in data[key]:
+    del data[key]['$target']
+    removed = True
+path.write_text(json.dumps(data, indent=2) + '\n')
+exit(0 if removed else 1)
+" 2>/dev/null
+    return $?
+  fi
+  return 1
+}
+
+# ============================================================
 # Update MCP config (add basic-memory if missing)
 # ============================================================
 add_basic_memory_to_mcp() {
@@ -451,26 +482,29 @@ update_mcp_config() {
   local project_name="$1"
   local updated=false
 
-  if [ -f ".beings/mcp.json" ]; then
-    if add_basic_memory_to_mcp ".beings/mcp.json" "servers" "$project_name"; then
-      print_step "Updated ${BOLD}.beings/mcp.json${NC} with basic-memory"
-      updated=true
-    fi
-  fi
+  # Three config files: canonical, Claude Code, Cursor
+  # Each has a different root key for servers
+  for entry in \
+    ".beings/mcp.json:servers" \
+    ".mcp.json:mcpServers" \
+    ".cursor/mcp.json:mcpServers"; do
+    local path="${entry%:*}"
+    local key="${entry#*:}"
 
-  if [ -f ".mcp.json" ]; then
-    if add_basic_memory_to_mcp ".mcp.json" "mcpServers" "$project_name"; then
-      print_step "Updated ${BOLD}.mcp.json${NC} with basic-memory"
-      updated=true
-    fi
-  fi
+    [ ! -f "$path" ] && continue
 
-  if [ -f ".cursor/mcp.json" ]; then
-    if add_basic_memory_to_mcp ".cursor/mcp.json" "mcpServers" "$project_name"; then
-      print_step "Updated ${BOLD}.cursor/mcp.json${NC} with basic-memory"
+    # Step 1: strip legacy megamemory entry if present (v0.2.0 migration)
+    if remove_server_from_mcp "$path" "$key" "megamemory"; then
+      print_step "Removed legacy ${BOLD}megamemory${NC} from ${path}"
       updated=true
     fi
-  fi
+
+    # Step 2: add basic-memory if not already present
+    if add_basic_memory_to_mcp "$path" "$key" "$project_name"; then
+      print_step "Added ${BOLD}basic-memory${NC} to ${path}"
+      updated=true
+    fi
+  done
 
   $updated || print_info "No existing MCP configs found to update"
 }
@@ -510,13 +544,16 @@ setup_memory_skill() {
   echo -e "  ${DIM}(Local SQLite index + fastembed embeddings, no data leaves your machine)${NC}\n"
 
   local install_memory=""
-  if can_prompt; then
+  if $YES_MODE; then
+    install_memory="y"
+    print_info "--yes mode: auto-installing basic-memory"
+  elif can_prompt; then
     read_input "  Install basic-memory? (Y/n) " install_memory
   else
-    print_info "Non-interactive mode — skipping memory skill (add later with --update)"
+    print_info "Non-interactive mode — skipping memory skill (re-run with --yes to auto-install)"
     return
   fi
-  [[ "$install_memory" == [nN]* ]] && { print_info "Skipped memory skill — add later with --update"; return; }
+  [[ "$install_memory" == [nN]* ]] && { print_info "Skipped memory skill — add later with --update --yes"; return; }
 
   # 3. Install basic-memory if not already present
   if ! command -v basic-memory &>/dev/null; then
@@ -675,18 +712,22 @@ setup_memory_hooks() {
 
   mkdir -p .claude
 
-  if [ -f "$settings_file" ] && grep -q "MEMORY PRESERVATION\|MEMORY RECALL" "$settings_file" 2>/dev/null; then
-    print_info "Memory hooks already configured — skipping"
+  # Check if already up-to-date with basic-memory hooks
+  if [ -f "$settings_file" ] && \
+     grep -q "basic-memory\|write_note\|search_notes" "$settings_file" 2>/dev/null && \
+     ! grep -q "MegaMemory\|understand tool\|get_concept" "$settings_file" 2>/dev/null; then
+    print_info "Memory hooks already up-to-date — skipping"
     return
   fi
 
-  # Try Python merge if settings file exists with existing hooks
+  # Try Python merge if settings file exists with existing hooks — also migrates
+  # away from legacy MegaMemory hooks if found.
   if [ -f "$settings_file" ] && command -v python3 &>/dev/null; then
     python3 -c "
 import json
 from pathlib import Path
 
-hooks_to_add = {
+new_hooks = {
     'PreCompact': [{
         'matcher': '',
         'hooks': [{
@@ -716,19 +757,33 @@ if path.exists():
 else:
     data = {}
 
-if 'hooks' not in data:
-    data['hooks'] = {}
+data.setdefault('hooks', {})
 
-for event, hook_list in hooks_to_add.items():
-    if event not in data['hooks']:
-        data['hooks'][event] = []
-    # Only append if not already there (simple check: look for MEMORY keyword in commands)
-    already = any(
-        'MEMORY' in (h.get('hooks', [{}])[0].get('command', '') if h.get('hooks') else '')
-        for h in data['hooks'][event]
-    )
-    if not already:
-        data['hooks'][event].extend(hook_list)
+# Legacy markers: if a hook command mentions MegaMemory tools, drop it
+def is_legacy_memory_hook(h):
+    for sub in h.get('hooks', []):
+        cmd = sub.get('command', '')
+        if any(t in cmd for t in ('MegaMemory', 'understand tool', 'get_concept', 'megamemory')):
+            return True
+    return False
+
+# Marker for the new basic-memory hooks: command mentions write_note or search_notes
+def is_new_memory_hook(h):
+    for sub in h.get('hooks', []):
+        cmd = sub.get('command', '')
+        if 'write_note' in cmd or 'search_notes' in cmd:
+            return True
+    return False
+
+for event, hook_list in new_hooks.items():
+    existing = data['hooks'].get(event, [])
+    # Filter out legacy memory hooks
+    filtered = [h for h in existing if not is_legacy_memory_hook(h)]
+    # Only add new hooks if not already present (post-filter)
+    has_new = any(is_new_memory_hook(h) for h in filtered)
+    if not has_new:
+        filtered.extend(hook_list)
+    data['hooks'][event] = filtered
 
 path.write_text(json.dumps(data, indent=2) + '\n')
 " 2>/dev/null
@@ -810,7 +865,11 @@ setup_code_intelligence() {
   echo -e "  ${DIM}(100% local, no data leaves your machine)${NC}\n"
   
   local install_axon=""
-  if can_prompt; then
+  if $YES_MODE; then
+    install_axon="n"  # --yes does NOT auto-install Axon (it's heavier / optional)
+    print_info "--yes mode: skipping Axon (explicit opt-in needed — Axon is heavy)"
+    return
+  elif can_prompt; then
     read_input "  Install Axon? (Y/n) " install_axon
   else
     # Non-interactive: skip
@@ -949,7 +1008,8 @@ main() {
   # Parse arguments
   for arg in "$@"; do
     case "$arg" in
-      --update) UPDATE_MODE=true ;;
+      --update)         UPDATE_MODE=true ;;
+      --yes|-y)         YES_MODE=true ;;
     esac
   done
 
