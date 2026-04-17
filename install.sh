@@ -522,28 +522,85 @@ update_mcp_config() {
 }
 
 # ============================================================
+# uv bootstrap — installs uv into ~/.local/bin if missing.
+# uv ships with its own Python runtimes, so installing basic-memory
+# or axoniq via `uv tool install <pkg>` doesn't depend on the system
+# python3 version. This is what makes the Python >= 3.10 requirement
+# a non-issue on older systems.
+# ============================================================
+ensure_uv() {
+  if command -v uv &>/dev/null; then
+    return 0
+  fi
+
+  local install_uv_ans=""
+  if $YES_MODE; then
+    install_uv_ans="y"
+    print_info "--yes mode: auto-installing uv (Python tool manager)"
+  elif can_prompt; then
+    echo ""
+    print_info "${BOLD}uv${NC} (Python tool manager) is not installed."
+    print_info "uv ships with its own Python runtime — lets us install"
+    print_info "basic-memory without touching your system Python."
+    read_input "  Install uv into ~/.local/bin? (Y/n) " install_uv_ans
+  else
+    print_warn "uv not found — cannot bootstrap Python tooling non-interactively"
+    print_info "Install manually: ${DIM}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}"
+    print_info "Or re-run with --yes to auto-install."
+    return 1
+  fi
+
+  if [[ "$install_uv_ans" == [nN]* ]]; then
+    print_info "Skipped uv install"
+    return 1
+  fi
+
+  print_info "Installing uv..."
+  if ! curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1; then
+    print_warn "Failed to install uv"
+    return 1
+  fi
+
+  # uv installer drops into ~/.local/bin by default — make sure our
+  # PATH picks it up for the rest of this install.sh run.
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! command -v uv &>/dev/null; then
+    print_warn "uv installed but not on PATH — add ~/.local/bin to your shell PATH"
+    return 1
+  fi
+
+  print_step "Installed ${BOLD}uv${NC} ($(uv --version 2>/dev/null | head -1))"
+}
+
+# ============================================================
 # Memory Skill (basic-memory — Optional)
 # ============================================================
 setup_memory_skill() {
   local detected_tools="$1"
 
-  # 1. If basic-memory already installed, skip Python version check
-  #    (it was installed with whatever runtime uv/pipx/pip used)
+  # 1. If basic-memory is already installed, skip runtime checks entirely.
+  #    Otherwise, bootstrap uv first — uv ships its own Python, so we don't
+  #    need system python3 >= 3.10. Falls through to pipx/pip check only if
+  #    uv isn't available.
   if ! command -v basic-memory &>/dev/null; then
-    # Only check Python if we need to install basic-memory ourselves
-    if ! command -v python3 &>/dev/null; then
-      print_warn "Python3 not found — skipping basic-memory"
-      print_info "Install Python >= 3.10 and re-run with --update to add memory skill"
-      return
-    fi
+    ensure_uv || true
 
-    local python_major python_minor
-    python_major=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
-    python_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
-    if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
-      print_warn "Python >= 3.10 required (system python3 is ${python_major}.${python_minor}) — skipping basic-memory"
-      print_info "Install Python 3.10+, or install basic-memory with uv/pipx, then re-run --update"
-      return
+    if ! command -v uv &>/dev/null; then
+      if ! command -v python3 &>/dev/null; then
+        print_warn "No uv and no python3 — skipping basic-memory"
+        print_info "Install uv (${DIM}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}) and re-run with --update"
+        return
+      fi
+
+      local python_major python_minor
+      python_major=$(python3 -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+      python_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
+      if [ "$python_major" -lt 3 ] || { [ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]; }; then
+        print_warn "No uv and system python3 is ${python_major}.${python_minor} (< 3.10) — skipping basic-memory"
+        print_info "Install uv (${DIM}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}) for easiest setup,"
+        print_info "or install Python 3.10+, then re-run with --update"
+        return
+      fi
     fi
   fi
 
