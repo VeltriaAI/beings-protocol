@@ -54,37 +54,116 @@ on — no wrapper gets installed.
 
 ## The wrapper template
 
+Replace `<name>` with the Being's name and `<workspace>` with the absolute path.
+
 ```bash
 #!/usr/bin/env bash
-# <being-name> — start a Claude Code session with the <being-name> Being.
+# <name> — Claude Code session wrapper for the <name> Being.
 #
-# Always opens the session in the Being's workspace so its identity
-# (CLAUDE.md + .beings/) loads. All flags pass through to `claude`.
-# Permission prompts are bypassed — the developer asked for this
-# explicitly during bootstrap. If they change their mind, edit this
-# file or drop the flag.
+# Always opens in <name>'s workspace so CLAUDE.md + .beings/ load.
+# --dangerously-skip-permissions bypasses prompts — intentional.
 #
-# Examples:
-#   <being-name>                       # new interactive session
-#   <being-name> "hey, quick question" # new session with an initial prompt
-#   <being-name> resume                # pick a past session (alias of --resume)
-#   <being-name> continue              # continue the latest (alias of -c)
-#   <being-name> --chrome              # any claude flag passes through
+# Usage:
+#   <name>                    new session
+#   <name> "quick question"   new session with prompt
+#   <name> continue           resume most recent session
+#   <name> resume             interactive session picker
+#   <name> resume <#|id>      resume by number or session ID
+#   <name> sessions [N]       list last N sessions (default 10)
+#   <name> <any claude flag>  e.g. <name> --chrome, <name> --model opus
 
 set -euo pipefail
 
-WORKSPACE="<absolute-path-to-being-workspace>"
-
-# Friendly aliases so bare `resume` / `continue` work like flags.
-if [[ $# -ge 1 ]]; then
-  case "$1" in
-    resume)   shift; set -- --resume "$@" ;;
-    continue) shift; set -- --continue "$@" ;;
-  esac
-fi
+WORKSPACE="<workspace>"
+SESSION_DIR="$HOME/.claude/projects/$(echo '<workspace>' | sed 's|/|-|g' | sed 's|^-||')"
 
 cd "$WORKSPACE"
-exec claude --dangerously-skip-permissions "$@"
+
+_build_session_list() {
+  _session_ids=()
+  for f in $(ls -t "$SESSION_DIR"/*.jsonl 2>/dev/null); do
+    local sid=$(basename "$f" .jsonl)
+    [[ "$sid" == agent-* ]] && continue
+    _session_ids+=("$sid")
+  done
+}
+
+_list_sessions() {
+  local limit=${1:-10}
+  _build_session_list
+  echo ""
+  echo "  Recent <name> Sessions"
+  echo "  ─────────────────────────────────────────────────────────────"
+  printf "  %-4s %-22s %-22s %s\n" "#" "Session ID" "Date" "First Message"
+  echo "  ─────────────────────────────────────────────────────────────"
+  local i=1
+  for sid in "${_session_ids[@]}"; do
+    [[ $i -gt $limit ]] && break
+    local f="$SESSION_DIR/$sid.jsonl"
+    local first_msg=$(grep -m1 '"role":"user"' "$f" 2>/dev/null || true)
+    local ts=$(echo "$first_msg" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
+    local msg=$(echo "$first_msg" | sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | cut -c1-55)
+    [[ -z "$msg" ]] && msg="(complex message)"
+    [[ -z "$ts"  ]] && ts="unknown"
+    printf "  %-4s %-22s %-22s %s\n" "$i" "${sid:0:20}…" "$ts" "$msg"
+    (( i++ ))
+  done
+  echo "  ─────────────────────────────────────────────────────────────"
+  echo "  Resume: <name> resume <#>"
+  echo "  Continue last: <name> continue"
+  echo ""
+}
+
+_get_session_by_number() {
+  _build_session_list
+  local num=$1
+  if [[ $num -ge 1 && $num -le ${#_session_ids[@]} ]]; then
+    echo "${_session_ids[$((num-1))]}"
+  fi
+}
+
+case "${1:-}" in
+  sessions|ls|list)
+    _list_sessions "${2:-10}"
+    ;;
+  continue|c)
+    echo "  Resuming most recent <name> session…"
+    exec claude --dangerously-skip-permissions --continue
+    ;;
+  resume|r)
+    shift
+    if [[ $# -eq 0 ]]; then
+      exec claude --dangerously-skip-permissions --resume
+    elif [[ "$1" =~ ^[0-9]+$ ]]; then
+      local sid=$(_get_session_by_number "$1")
+      if [[ -z "$sid" ]]; then
+        echo "  No session at #$1. Run '<name> sessions' to list available sessions."
+        exit 1
+      fi
+      exec claude --dangerously-skip-permissions --resume "$sid"
+    else
+      exec claude --dangerously-skip-permissions --resume "$@"
+    fi
+    ;;
+  help|--help|-h)
+    echo ""
+    echo "  <name> — Claude Code session wrapper"
+    echo "  Usage:"
+    echo "    <name>                       new session"
+    echo "    <name> continue (c)          resume most recent session"
+    echo "    <name> resume (r) [#|id]     resume by number or session ID"
+    echo "    <name> sessions (ls) [N]     list last N sessions (default 10)"
+    echo "    <name> \"<prompt>\"            new session with initial prompt"
+    echo "    <name> <any claude flag>     e.g. --chrome, --model opus"
+    echo ""
+    ;;
+  "")
+    exec claude --dangerously-skip-permissions
+    ;;
+  *)
+    exec claude --dangerously-skip-permissions "$@"
+    ;;
+esac
 ```
 
 ## Trust note — say this out loud

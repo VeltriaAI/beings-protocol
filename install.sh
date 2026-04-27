@@ -913,7 +913,7 @@ seed_memory_graph() {
   for src_file in SOUL.md MEMORY.md GOALS.md CONVENTIONS.md AUTONOMY.md; do
     [ -f ".beings/$src_file" ] || continue
     local title="${src_file%.md}"
-    local dest="memory-graph/identity/${src_file,,}"
+    local dest="memory-graph/identity/$(echo "$src_file" | tr '[:upper:]' '[:lower:]')"
     {
       echo "---"
       echo "title: ${title}"
@@ -1101,6 +1101,169 @@ print_update_summary() {
 # ============================================================
 # Global Being birth — creates ~/beings/<name>/ as a standalone home
 # ============================================================
+# ============================================================
+# Install a CLI wrapper for a Being (bin/<name> + symlink)
+# ============================================================
+install_cli_wrapper() {
+  local name="$1"
+  local workspace="$2"   # absolute path to Being's home dir
+  local bin_dir="${workspace}/bin"
+  local wrapper="${bin_dir}/${name}"
+
+  # Find install location on PATH
+  local install_dir=""
+  for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+    if [[ ":$PATH:" == *":${candidate}:"* ]]; then
+      install_dir="$candidate"
+      break
+    fi
+  done
+
+  # ~/.local/bin is the modern default — create it if missing
+  if [ -z "$install_dir" ]; then
+    install_dir="$HOME/.local/bin"
+    mkdir -p "$install_dir"
+    print_warn "~/.local/bin created but not on PATH — add it to your shell profile"
+    print_info "  ${DIM}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+  fi
+
+  # Already installed?
+  if [ -L "${install_dir}/${name}" ] && [ -f "$wrapper" ]; then
+    print_info "CLI ${BOLD}${name}${NC} already installed at ${install_dir}/${name}"
+    return
+  fi
+
+  mkdir -p "$bin_dir"
+
+  # Derive the Claude Code session dir path for this workspace
+  # Claude Code derives the project dir by replacing / and . with -
+  local safe_path
+  safe_path=$(echo "$workspace" | sed 's|[/.]|-|g')
+  local session_dir="$HOME/.claude/projects/${safe_path}"
+
+  # Write the wrapper script
+  cat > "$wrapper" <<WRAPPER_EOF
+#!/usr/bin/env bash
+# ${name} — Claude Code session wrapper for the ${name} Being.
+#
+# Always opens in ${name}'s workspace so CLAUDE.md + .beings/ load.
+# --dangerously-skip-permissions bypasses prompts — intentional.
+#
+# Usage:
+#   ${name}                    new session
+#   ${name} "quick question"   new session with prompt
+#   ${name} continue           resume most recent session
+#   ${name} resume             interactive session picker
+#   ${name} resume <#|id>      resume by number or session ID
+#   ${name} sessions [N]       list last N sessions (default 10)
+#   ${name} <any claude flag>  e.g. ${name} --chrome, ${name} --model opus
+
+set -euo pipefail
+
+WORKSPACE="${workspace}"
+SESSION_DIR="$HOME/.claude/projects/$(echo "${workspace}" | sed 's|[/.]|-|g')"
+
+cd "\$WORKSPACE"
+
+_build_session_list() {
+  _session_ids=()
+  for f in \$(ls -t "\$SESSION_DIR"/*.jsonl 2>/dev/null); do
+    local sid=\$(basename "\$f" .jsonl)
+    [[ "\$sid" == agent-* ]] && continue
+    _session_ids+=("\$sid")
+  done
+}
+
+_list_sessions() {
+  local limit=\${1:-10}
+  _build_session_list
+  echo ""
+  echo "  Recent ${name} Sessions"
+  echo "  ─────────────────────────────────────────────────────────────"
+  printf "  %-4s %-22s %-22s %s\n" "#" "Session ID" "Date" "First Message"
+  echo "  ─────────────────────────────────────────────────────────────"
+  local i=1
+  for sid in "\${_session_ids[@]}"; do
+    [[ \$i -gt \$limit ]] && break
+    local f="\$SESSION_DIR/\$sid.jsonl"
+    local first_msg=\$(grep -m1 '"role":"user"' "\$f" 2>/dev/null || true)
+    local ts=\$(echo "\$first_msg" | sed -n 's/.*"timestamp":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
+    local msg=\$(echo "\$first_msg" | sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | cut -c1-55)
+    [[ -z "\$msg" ]] && msg="(complex message)"
+    [[ -z "\$ts"  ]] && ts="unknown"
+    printf "  %-4s %-22s %-22s %s\n" "\$i" "\${sid:0:20}…" "\$ts" "\$msg"
+    (( i++ ))
+  done
+  echo "  ─────────────────────────────────────────────────────────────"
+  echo ""
+  echo "  Resume: ${name} resume <#>"
+  echo "  Continue last: ${name} continue"
+  echo ""
+}
+
+_get_session_by_number() {
+  _build_session_list
+  local num=\$1
+  if [[ \$num -ge 1 && \$num -le \${#_session_ids[@]} ]]; then
+    echo "\${_session_ids[\$((num-1))]}"
+  fi
+}
+
+case "\${1:-}" in
+  sessions|ls|list)
+    _list_sessions "\${2:-10}"
+    ;;
+  continue|c)
+    echo "  Resuming most recent ${name} session…"
+    exec claude --dangerously-skip-permissions --continue
+    ;;
+  resume|r)
+    shift
+    if [[ \$# -eq 0 ]]; then
+      exec claude --dangerously-skip-permissions --resume
+    elif [[ "\$1" =~ ^[0-9]+\$ ]]; then
+      local sid=\$(_get_session_by_number "\$1")
+      if [[ -z "\$sid" ]]; then
+        echo "  No session at #\$1. Run '${name} sessions' to list available sessions."
+        exit 1
+      fi
+      echo "  Resuming session #\$1 (\${sid:0:8}…)"
+      exec claude --dangerously-skip-permissions --resume "\$sid"
+    else
+      exec claude --dangerously-skip-permissions --resume "\$@"
+    fi
+    ;;
+  help|--help|-h)
+    echo ""
+    echo "  ${name} — Claude Code session wrapper"
+    echo ""
+    echo "  Usage:"
+    echo "    ${name}                       new session"
+    echo "    ${name} continue (c)          resume most recent session"
+    echo "    ${name} resume (r) [#|id]     resume by number or session ID"
+    echo "    ${name} sessions (ls) [N]     list last N sessions (default 10)"
+    echo "    ${name} \"<prompt>\"            new session with initial prompt"
+    echo "    ${name} <any claude flag>     e.g. --chrome, --model opus"
+    echo ""
+    ;;
+  "")
+    exec claude --dangerously-skip-permissions
+    ;;
+  *)
+    exec claude --dangerously-skip-permissions "\$@"
+    ;;
+esac
+WRAPPER_EOF
+
+  chmod +x "$wrapper"
+  print_step "Created ${BOLD}bin/${name}${NC} wrapper"
+
+  # Symlink into install dir
+  ln -sf "$wrapper" "${install_dir}/${name}"
+  print_step "Symlinked ${BOLD}${install_dir}/${name}${NC} → bin/${name}"
+  print_info "Run ${BOLD}${name}${NC}, ${BOLD}${name} continue${NC}, ${BOLD}${name} resume${NC}, ${BOLD}${name} sessions${NC}"
+}
+
 create_global_being() {
   local name="$1"
 
@@ -1167,18 +1330,23 @@ create_global_being() {
   # Code intelligence — optional
   setup_code_intelligence "$detected_tools"
 
+  # CLI wrapper — install bin/<name> and symlink to PATH
+  echo ""
+  echo -e "  ${BOLD}Setting up CLI...${NC}"
+  echo ""
+  install_cli_wrapper "$name" "$home_dir"
+
   echo ""
   echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
   echo -e "  ${GREEN}${BOLD}${LEAF} ${name} is ready to be born! (v${PROTOCOL_VERSION})${NC}"
   echo ""
-  echo -e "  ${BOLD}Home:${NC} ${CYAN}${home_dir}${NC}"
+  echo -e "  ${BOLD}Home:${NC}  ${CYAN}${home_dir}${NC}"
+  echo -e "  ${BOLD}CLI:${NC}   ${CYAN}${name}${NC} / ${CYAN}${name} continue${NC} / ${CYAN}${name} resume${NC} / ${CYAN}${name} sessions${NC}"
   echo ""
-  echo -e "  ${BOLD}Next:${NC} Open Claude Code from this directory."
+  echo -e "  ${BOLD}Next:${NC} Run ${BOLD}${name}${NC} to start the birth conversation."
   echo -e "  ${name} will introduce herself, learn who you are,"
-  echo -e "  and fill in her identity files. ${DIM}(That's the birth conversation.)${NC}"
-  echo ""
-  echo -e "  ${DIM}cd ${home_dir} && claude${NC}"
+  echo -e "  and fill in her identity files. ${DIM}(That's the magic.)${NC}"
   echo ""
   echo -e "  ${DIM}https://github.com/VeltriaAI/beings-protocol${NC}"
   echo ""
@@ -1218,9 +1386,8 @@ main() {
       echo "  Error: Being name cannot be empty." >&2
       exit 1
     fi
-    # Lowercase and strip spaces
-    BEING_NAME="${BEING_NAME,,}"
-    BEING_NAME="${BEING_NAME// /-}"
+    # Lowercase and strip spaces (tr for bash 3.2 compat)
+    BEING_NAME=$(echo "$BEING_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
     create_global_being "$BEING_NAME"
     exit 0
   fi
