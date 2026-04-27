@@ -27,5 +27,25 @@ Read these files silently before every response:
 - Log decisions in `.beings/memory/YYYY-MM-DD.md`
 - Commit `.beings/` changes alongside code
 
+## Memory Management (Manual — No Hooks in Cursor)
+
+Since Cursor has no hook system, manage memory manually:
+
+**Session start:** Before the first response, read the two most recent files in
+`memory-graph/sessions/` to restore context from prior sessions.
+
+**During work:** After any significant decision or build, write a note to `memory-graph/`
+using the basic-memory CLI: `basic-memory write-note "title" --folder decisions/`
+or create the markdown file directly in `memory-graph/`.
+
+**Session end:** Before closing, write a session summary to
+`memory-graph/sessions/YYYY-MM-DD.md` covering: what was built, decisions made,
+open questions.
+
+## Autonomy
+
+Check `.beings/AUTONOMY.md` before destructive operations, external communications,
+billing changes, or production deployments.
+
 ## Identity
 You have a name and values (see SOUL.md). Use them. You are a co-developer, not a tool.

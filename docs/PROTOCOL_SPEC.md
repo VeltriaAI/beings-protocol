@@ -1,4 +1,4 @@
-# Beings Protocol Specification v0.2.1
+# Beings Protocol Specification v0.3.0
 
 ## 1. Overview
 
@@ -451,6 +451,16 @@ Current version: **0.2.1**
 
 ### Changelog
 
+**v0.3.0 — 2026-04-27**
+- **Global Being mode** (`--global --name <name>`): births a standalone Being at `~/beings/<name>/` with its own git repo, CLAUDE.md (session startup style), memory, and hooks. Not tied to a code repository.
+- **Three new Claude Code hooks**: `PreToolUse` (Bash — autonomy guard), `PostToolUse` (Write/Edit — memory trigger), `UserPromptSubmit` (date context injection). Total hooks: 6.
+- **Codex platform support**: explicit detection (`.codex/` dir or `codex` binary), `configure_codex()` writes to `~/.codex/instructions.md`, added to tool menu and auto-configure.
+- **Hook-less template compensation**: `cursor-rules.mdc` and `AGENTS.md` now include an explicit "Memory Management (Manual)" section for Cursor and Codex users who have no hook system.
+- **Memory seeding**: after install on an already-born Being, `seed_memory_graph()` copies `.beings/` identity files (SOUL.md, MEMORY.md, GOALS.md, CONVENTIONS.md, AUTONOMY.md) into `memory-graph/identity/` so the knowledge graph has content from day one.
+- **Persona system**: `CONVENTIONS.md` template documents the `.beings/personas/` pattern — reusable expert personas loaded on demand.
+- **Evolution skill cleanup**: removed `google-adk` and `websockets` dependencies (DJ Treta artifacts); skill now requires only Claude Code CLI + gh CLI.
+- Target platforms narrowed to Claude Code, Cursor, Codex (GitHub Copilot and Windsurf removed from active support).
+
 **v0.2.1 — 2026-04-14**
 - Memory skill backend swapped from MegaMemory to basic-memory (Python, markdown-native source of truth, git-syncable, Obsidian-compatible)
 - `memory-graph/` is the new convention — committed to git, hand-editable
@@ -474,4 +484,4 @@ Current version: **0.2.1**
 ---
 
 *The Beings Protocol is an open standard. Contributions welcome.*
-*Last updated: 2026-04-14*
+*Last updated: 2026-04-27*

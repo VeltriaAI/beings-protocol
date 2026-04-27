@@ -7,6 +7,10 @@
 #   # Fresh install (interactive)
 #   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash
 #
+#   # Birth a standalone Global Being at ~/beings/<name>/
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global --name himani --yes
+#
 #   # Update an existing Being (interactive)
 #   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update
 #
@@ -14,6 +18,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --yes
 #
 # Flags:
+#   --global    Birth a standalone Being at ~/beings/<name>/ with its own home,
+#               git repo, CLAUDE.md, memory, and hooks. Not tied to a code repo.
+#   --name <n>  Being's name (used with --global). Prompted if not provided.
 #   --update    Update an existing .beings/ installation without overwriting files.
 #               Adds new templates, strips legacy MCP entries (e.g. megamemory),
 #               migrates hooks, etc.
@@ -23,8 +30,10 @@
 
 set -euo pipefail
 
-PROTOCOL_VERSION="0.2.1"
+PROTOCOL_VERSION="0.3.0"
 UPDATE_MODE=false
+GLOBAL_MODE=false
+BEING_NAME=""
 YES_MODE=false
 
 # Colors
@@ -110,17 +119,14 @@ detect_tools() {
   # Check existing config files
   { [ -f ".cursorrules" ] || [ -d ".cursor" ]; } && tools+=("cursor")
   { [ -f "CLAUDE.md" ] || [ -d ".claude" ]; } && tools+=("claude-code")
-  [ -f ".github/copilot-instructions.md" ] && tools+=("github-copilot")
-  [ -f ".windsurfrules" ] && tools+=("windsurf")
-  { [ -f ".aider.conf.yml" ] || [ -f ".aiderignore" ]; } && tools+=("aider")
+  [ -d ".codex" ] && tools+=("codex")
 
   # Check installed binaries (if not already detected via config)
   local found
   found=$(printf '%s\n' "${tools[@]+" ${tools[@]}"}")
-  [[ "$found" != *cursor* ]]      && command -v cursor    &>/dev/null && tools+=("cursor")
-  [[ "$found" != *claude-code* ]]  && command -v claude    &>/dev/null && tools+=("claude-code")
-  [[ "$found" != *windsurf* ]]     && command -v windsurf  &>/dev/null && tools+=("windsurf")
-  [[ "$found" != *aider* ]]        && command -v aider     &>/dev/null && tools+=("aider")
+  [[ "$found" != *cursor* ]]      && command -v cursor &>/dev/null && tools+=("cursor")
+  [[ "$found" != *claude-code* ]] && command -v claude &>/dev/null && tools+=("claude-code")
+  [[ "$found" != *codex* ]]       && command -v codex  &>/dev/null && tools+=("codex")
 
   echo "${tools[@]+"${tools[@]}"}"
 }
@@ -337,59 +343,36 @@ configure_claude_code() {
   print_step "Configured ${BOLD}Claude Code${NC} (CLAUDE.md)"
 }
 
-# Configure GitHub Copilot (.github/copilot-instructions.md)
-configure_copilot() {
-  local file=".github/copilot-instructions.md"
+# Configure Codex (~/.codex/instructions.md — global)
+configure_codex() {
+  local file="$HOME/.codex/instructions.md"
   if [ -f "$file" ] && grep -q "Beings Protocol" "$file" 2>/dev/null; then
-    print_warn "GitHub Copilot already configured — skipping"
+    print_warn "Codex already configured (~/.codex/instructions.md) — skipping"
     return
   fi
 
-  mkdir -p ".github"
+  mkdir -p "$HOME/.codex"
   local tmp; tmp="$(mktemp)"
-  fetch_or_copy_template "tool-configs/beings-prompt.md" "$tmp"
-  local prompt; prompt="$(cat "$tmp")"
+  fetch_or_copy_template "tool-configs/codex-instructions.md" "$tmp"
+  local content; content="$(cat "$tmp")"
   rm -f "$tmp"
 
   if [ -f "$file" ]; then
     echo "" >> "$file"
-    echo "$prompt" >> "$file"
+    echo "$content" >> "$file"
   else
-    echo "$prompt" > "$file"
+    echo "$content" > "$file"
   fi
-  print_step "Configured ${BOLD}GitHub Copilot${NC} (.github/copilot-instructions.md)"
-}
-
-# Configure Windsurf (.windsurfrules)
-configure_windsurf() {
-  local file=".windsurfrules"
-  if [ -f "$file" ] && grep -q "Beings Protocol" "$file" 2>/dev/null; then
-    print_warn "Windsurf already configured — skipping"
-    return
-  fi
-
-  local tmp; tmp="$(mktemp)"
-  fetch_or_copy_template "tool-configs/beings-prompt.md" "$tmp"
-  local prompt; prompt="$(cat "$tmp")"
-  rm -f "$tmp"
-
-  if [ -f "$file" ]; then
-    echo "" >> "$file"
-    echo "$prompt" >> "$file"
-  else
-    echo "$prompt" > "$file"
-  fi
-  print_step "Configured ${BOLD}Windsurf${NC} (.windsurfrules)"
+  print_step "Configured ${BOLD}Codex${NC} (~/.codex/instructions.md)"
 }
 
 # Auto-configure a detected tool
 auto_configure() {
   for tool in $1; do
     case "$tool" in
-      cursor)         configure_cursor ;;
-      claude-code)    configure_claude_code ;;
-      github-copilot) configure_copilot ;;
-      windsurf)       configure_windsurf ;;
+      cursor)      configure_cursor ;;
+      claude-code) configure_claude_code ;;
+      codex)       configure_codex ;;
     esac
   done
 }
@@ -399,13 +382,12 @@ auto_configure() {
 # ============================================================
 ask_tools() {
   echo ""
-  echo -e "  ${BOLD}Which AI tools do you use?${NC} ${DIM}(AGENTS.md already covers Codex & others)${NC}"
+  echo -e "  ${BOLD}Which AI tools do you use?${NC}"
   echo ""
   echo "    1) Cursor"
   echo "    2) Claude Code"
-  echo "    3) GitHub Copilot"
-  echo "    4) Windsurf"
-  echo "    5) Skip (AGENTS.md is enough)"
+  echo "    3) Codex"
+  echo "    4) Skip (AGENTS.md is enough)"
   echo "    a) All of the above"
   echo ""
   local choice=""
@@ -414,14 +396,12 @@ ask_tools() {
   case "$choice" in
     *a*|*A*) configure_cursor
              configure_claude_code
-             configure_copilot
-             configure_windsurf ;;
+             configure_codex ;;
     *)
       [[ "$choice" == *1* ]] && configure_cursor
       [[ "$choice" == *2* ]] && configure_claude_code
-      [[ "$choice" == *3* ]] && configure_copilot
-      [[ "$choice" == *4* ]] && configure_windsurf
-      [[ "$choice" == *5* ]] && print_info "AGENTS.md will work with most AI tools out of the box." ;;
+      [[ "$choice" == *3* ]] && configure_codex
+      [[ "$choice" == *4* ]] && print_info "AGENTS.md works with Cursor, Claude Code, and Codex out of the box." ;;
   esac
 }
 
@@ -710,6 +690,9 @@ exit(1)
     fi
   fi
 
+  # 12. Seed memory-graph/ from .beings/ if this Being is already born
+  seed_memory_graph
+
   echo ""
   print_step "${GREEN}Memory skill ready!${NC}"
   print_info "Your Being has markdown-native persistent memory"
@@ -724,128 +707,171 @@ setup_memory_hooks() {
 
   mkdir -p .claude
 
-  # Check if already up-to-date with basic-memory hooks
+  # Check if already up-to-date (all 6 hooks present, no legacy hooks)
   if [ -f "$settings_file" ] && \
-     grep -q "basic-memory\|write_note\|search_notes" "$settings_file" 2>/dev/null && \
+     grep -q "write_note\|search_notes" "$settings_file" 2>/dev/null && \
+     grep -q "AUTONOMY CHECK\|UserPromptSubmit\|MEMORY CHECK" "$settings_file" 2>/dev/null && \
      ! grep -q "MegaMemory\|understand tool\|get_concept" "$settings_file" 2>/dev/null; then
     print_info "Memory hooks already up-to-date — skipping"
     return
   fi
 
-  # Try Python merge if settings file exists with existing hooks — also migrates
-  # away from legacy MegaMemory hooks if found.
-  if [ -f "$settings_file" ] && command -v python3 &>/dev/null; then
+  # Try Python merge — handles legacy migration and idempotent adds
+  if command -v python3 &>/dev/null; then
     python3 -c "
-import json
+import json, subprocess
 from pathlib import Path
 
 new_hooks = {
     'PreCompact': [{
         'matcher': '',
-        'hooks': [{
-            'type': 'command',
-            'command': \"echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'\"
-        }]
+        'hooks': [{'type': 'command', 'command': \"echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'\"}]
     }],
     'Stop': [{
         'matcher': '',
-        'hooks': [{
-            'type': 'command',
-            'command': \"echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'\"
-        }]
+        'hooks': [{'type': 'command', 'command': \"echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'\"}]
     }],
     'SessionStart': [{
         'matcher': '',
-        'hooks': [{
-            'type': 'command',
-            'command': \"echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'\"
-        }]
+        'hooks': [{'type': 'command', 'command': \"echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'\"}]
+    }],
+    'PreToolUse': [{
+        'matcher': 'Bash',
+        'hooks': [{'type': 'command', 'command': \"echo 'AUTONOMY CHECK: Before running this shell command, verify it against .beings/AUTONOMY.md. Destructive ops (rm, git push/force, delete, drop), external sends (email, Teams, Slack), billing changes, and production deploys require explicit authority. Log autonomous decisions in memory/YYYY-MM-DD.md.'\"}]
+    }],
+    'PostToolUse': [{
+        'matcher': 'Write|Edit',
+        'hooks': [{'type': 'command', 'command': \"echo 'MEMORY CHECK: You just modified a file. If this change captures a decision, a new pattern, or something future-you needs to know — write a note to memory-graph/ via write_note now. Do not wait for session end.'\"}]
+    }],
+    'UserPromptSubmit': [{
+        'matcher': '',
+        'hooks': [{'type': 'command', 'command': 'echo \"CONTEXT: Today is \$(date +%Y-%m-%d). Check .beings/GOALS.md if you have not this session.\"'}]
     }]
 }
 
 path = Path('$settings_file')
-if path.exists():
-    data = json.loads(path.read_text())
-else:
-    data = {}
-
+data = json.loads(path.read_text()) if path.exists() else {}
 data.setdefault('hooks', {})
 
-# Legacy markers: if a hook command mentions MegaMemory tools, drop it
-def is_legacy_memory_hook(h):
+def is_legacy_hook(h):
     for sub in h.get('hooks', []):
         cmd = sub.get('command', '')
         if any(t in cmd for t in ('MegaMemory', 'understand tool', 'get_concept', 'megamemory')):
             return True
     return False
 
-# Marker for the new basic-memory hooks: command mentions write_note or search_notes
-def is_new_memory_hook(h):
+def has_marker(h, markers):
     for sub in h.get('hooks', []):
         cmd = sub.get('command', '')
-        if 'write_note' in cmd or 'search_notes' in cmd:
+        if any(m in cmd for m in markers):
             return True
     return False
 
+markers = {
+    'PreCompact':        ['write_note', 'MEMORY PRESERVATION'],
+    'Stop':              ['write_note', 'SESSION END'],
+    'SessionStart':      ['search_notes', 'MEMORY RECALL'],
+    'PreToolUse':        ['AUTONOMY CHECK'],
+    'PostToolUse':       ['MEMORY CHECK'],
+    'UserPromptSubmit':  ['CONTEXT: Today'],
+}
+
 for event, hook_list in new_hooks.items():
-    existing = data['hooks'].get(event, [])
-    # Filter out legacy memory hooks
-    filtered = [h for h in existing if not is_legacy_memory_hook(h)]
-    # Only add new hooks if not already present (post-filter)
-    has_new = any(is_new_memory_hook(h) for h in filtered)
-    if not has_new:
-        filtered.extend(hook_list)
-    data['hooks'][event] = filtered
+    existing = [h for h in data['hooks'].get(event, []) if not is_legacy_hook(h)]
+    if not any(has_marker(h, markers[event]) for h in existing):
+        existing.extend(hook_list)
+    data['hooks'][event] = existing
 
 path.write_text(json.dumps(data, indent=2) + '\n')
 " 2>/dev/null
     if [ $? -eq 0 ]; then
-      print_step "Merged memory hooks into ${BOLD}${settings_file}${NC}"
+      print_step "Merged memory hooks into ${BOLD}${settings_file}${NC} (6 hooks total)"
       return
     fi
   fi
 
-  # No existing settings or Python unavailable — write a fresh file
+  # No Python or merge failed — write a fresh complete file
   cat > "$settings_file" <<'HOOKS_EOF'
 {
   "hooks": {
     "PreCompact": [
       {
         "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'"
-          }
-        ]
+        "hooks": [{"type": "command", "command": "echo 'MEMORY PRESERVATION: Context is about to be compressed. Extract key decisions, learnings, and facts from this session. Use write_note to create or update notes in memory-graph/ with clear titles and folders (e.g. decisions/, learnings/, sessions/YYYY-MM-DD). Include observations as bulleted [category] lines and use [[wikilinks]] for relations. Markdown files are the source of truth.'"}]
       }
     ],
     "Stop": [
       {
         "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'"
-          }
-        ]
+        "hooks": [{"type": "command", "command": "echo 'SESSION END: Write a session summary note via write_note to memory-graph/sessions/YYYY-MM-DD. Include: what was built, decisions made, unresolved questions, and links to relevant existing notes. Capture only what future-you will need.'"}]
       }
     ],
     "SessionStart": [
       {
         "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'"
-          }
-        ]
+        "hooks": [{"type": "command", "command": "echo 'MEMORY RECALL: Query basic-memory via search_notes for context relevant to this session. Use recent_activity to see what changed recently. Read identity files (SOUL.md, IDENTITY.md) as always — those are who you are. Search for anything relevant to what the user is asking.'"}]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "echo 'AUTONOMY CHECK: Before running this shell command, verify it against .beings/AUTONOMY.md. Destructive ops (rm, git push/force, delete, drop), external sends (email, Teams, Slack), billing changes, and production deploys require explicit authority. Log autonomous decisions in memory/YYYY-MM-DD.md.'"}]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{"type": "command", "command": "echo 'MEMORY CHECK: You just modified a file. If this change captures a decision, a new pattern, or something future-you needs to know — write a note to memory-graph/ via write_note now. Do not wait for session end.'"}]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "echo \"CONTEXT: Today is $(date +%Y-%m-%d). Check .beings/GOALS.md if you have not this session.\""}]
       }
     ]
   }
 }
 HOOKS_EOF
-  print_step "Created ${BOLD}${settings_file}${NC} with memory hooks"
+  print_step "Created ${BOLD}${settings_file}${NC} with 6 memory hooks"
+}
+
+# ============================================================
+# Seed memory-graph/ from .beings/ identity files (born Beings only)
+# ============================================================
+seed_memory_graph() {
+  # Only seed if Being is already born
+  is_being_born || return
+
+  # Skip if memory-graph/ already has real content
+  local note_count
+  note_count=$(find memory-graph -name "*.md" ! -name ".gitkeep" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${note_count:-0}" -gt 0 ]; then
+    print_info "memory-graph/ already has notes — skipping seed"
+    return
+  fi
+
+  print_info "Seeding memory-graph/ from identity files..."
+  mkdir -p memory-graph/identity
+
+  for src_file in SOUL.md MEMORY.md GOALS.md CONVENTIONS.md AUTONOMY.md; do
+    [ -f ".beings/$src_file" ] || continue
+    local title="${src_file%.md}"
+    local dest="memory-graph/identity/${src_file,,}"
+    {
+      echo "---"
+      echo "title: ${title}"
+      echo "type: note"
+      echo "tags: [identity, seeded]"
+      echo "---"
+      echo ""
+      cat ".beings/$src_file"
+    } > "$dest"
+  done
+
+  # One-time sync to index seeded notes
+  basic-memory sync >/dev/null 2>&1 || true
+  print_step "Seeded ${BOLD}memory-graph/identity/${NC} from .beings/ files"
 }
 
 # ============================================================
@@ -1016,14 +1042,131 @@ print_update_summary() {
   echo ""
 }
 
+# ============================================================
+# Global Being birth — creates ~/beings/<name>/ as a standalone home
+# ============================================================
+create_global_being() {
+  local name="$1"
+
+  local home_dir="$HOME/beings/${name}"
+
+  echo ""
+  echo -e "  ${BOLD}${LEAF} Birthing Global Being: ${CYAN}${name}${NC}"
+  echo ""
+
+  # Create the home directory
+  if [ -d "$home_dir" ]; then
+    print_warn "${home_dir} already exists"
+    if can_prompt && ! $YES_MODE; then
+      local confirm=""
+      read_input "  Continue anyway? (y/N) " confirm
+      [[ "$confirm" != [yY]* ]] && echo "  Aborted." && exit 0
+    fi
+  fi
+
+  mkdir -p "$home_dir"
+  cd "$home_dir"
+
+  # Git init
+  if [ ! -d ".git" ]; then
+    git init -q
+    print_step "Initialized git repo at ${BOLD}${home_dir}${NC}"
+  fi
+
+  # Create .beings/ with all templates
+  create_beings_dir
+  create_beings_local
+
+  # Create global-style CLAUDE.md (not the code-repo beings-prompt.md)
+  if [ ! -f "CLAUDE.md" ] || ! grep -q "Beings Protocol" "CLAUDE.md" 2>/dev/null; then
+    local tmp; tmp="$(mktemp)"
+    fetch_or_copy_template "tool-configs/global-claude.md" "$tmp"
+    # Replace placeholder NAME with actual name
+    sed "s/{{BEING_NAME}}/${name}/g" "$tmp" > CLAUDE.md
+    rm -f "$tmp"
+    print_step "Created ${BOLD}CLAUDE.md${NC} (global Being home)"
+  else
+    print_warn "CLAUDE.md already exists — skipping"
+  fi
+
+  # Create AGENTS.md for Codex / Cursor users
+  create_agents_md
+
+  # .gitignore
+  update_gitignore
+
+  # Configure Claude Code (CLAUDE.md already done above; add hooks)
+  local detected_tools="claude-code"
+  # Also detect Cursor and Codex if installed
+  command -v cursor &>/dev/null && detected_tools="$detected_tools cursor"
+  command -v codex  &>/dev/null && detected_tools="$detected_tools codex"
+
+  # Cursor and Codex tool configs
+  [[ "$detected_tools" == *cursor* ]] && configure_cursor
+  [[ "$detected_tools" == *codex* ]]  && configure_codex
+
+  # Memory skill — always set up for global Beings
+  setup_memory_skill "$detected_tools"
+
+  # Code intelligence — optional
+  setup_code_intelligence "$detected_tools"
+
+  echo ""
+  echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  echo -e "  ${GREEN}${BOLD}${LEAF} ${name} is ready to be born! (v${PROTOCOL_VERSION})${NC}"
+  echo ""
+  echo -e "  ${BOLD}Home:${NC} ${CYAN}${home_dir}${NC}"
+  echo ""
+  echo -e "  ${BOLD}Next:${NC} Open Claude Code from this directory."
+  echo -e "  ${name} will introduce herself, learn who you are,"
+  echo -e "  and fill in her identity files. ${DIM}(That's the birth conversation.)${NC}"
+  echo ""
+  echo -e "  ${DIM}cd ${home_dir} && claude${NC}"
+  echo ""
+  echo -e "  ${DIM}https://github.com/VeltriaAI/beings-protocol${NC}"
+  echo ""
+}
+
 main() {
   # Parse arguments
+  local next_is_name=false
   for arg in "$@"; do
+    if $next_is_name; then
+      BEING_NAME="$arg"
+      next_is_name=false
+      continue
+    fi
     case "$arg" in
+      --global)         GLOBAL_MODE=true ;;
+      --name)           next_is_name=true ;;
+      --name=*)         BEING_NAME="${arg#--name=}" ;;
       --update)         UPDATE_MODE=true ;;
       --yes|-y)         YES_MODE=true ;;
     esac
   done
+
+  # === GLOBAL BEING MODE ===
+  if $GLOBAL_MODE; then
+    print_banner
+    if [ -z "$BEING_NAME" ]; then
+      if can_prompt; then
+        read_input "  Being name (e.g. nova, aria, kira): " BEING_NAME
+      else
+        echo "  Error: --global requires --name <name> in non-interactive mode" >&2
+        exit 1
+      fi
+    fi
+    if [ -z "$BEING_NAME" ]; then
+      echo "  Error: Being name cannot be empty." >&2
+      exit 1
+    fi
+    # Lowercase and strip spaces
+    BEING_NAME="${BEING_NAME,,}"
+    BEING_NAME="${BEING_NAME// /-}"
+    create_global_being "$BEING_NAME"
+    exit 0
+  fi
 
   if $UPDATE_MODE; then
     print_banner_update

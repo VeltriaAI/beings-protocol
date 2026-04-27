@@ -120,6 +120,22 @@ The installer:
 
 **That's literally it.** Start your next AI conversation.
 
+### Birthing a Global Being (New in v0.3.0)
+
+A **Global Being** has its own home — not tied to a code repo. This is the right pattern
+for a co-founder, co-creator, or assistant Being that works across many projects.
+
+```bash
+# Interactive — asks for the Being's name
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global
+
+# Non-interactive
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global --name nova --yes
+```
+
+This creates `~/beings/nova/` with its own git repo, session-startup CLAUDE.md, memory,
+and 6 hooks. Then: `cd ~/beings/nova && claude` — and Nova is born.
+
 ### Updating an Existing Being
 
 Already have a Being? Update it to the latest protocol version:
@@ -135,7 +151,8 @@ curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/inst
 The updater:
 - **Never overwrites** existing files. Identity, memory, and soul are untouched.
 - **Detects already-born Beings** and skips first-run bootstrap files
-- **Migrates legacy backends** cleanly — v0.2.0 users running MegaMemory get the memory skill swapped to basic-memory in a single command (old MCP entries removed, old hooks replaced, new ones installed)
+- **Seeds memory-graph/** from identity files on already-born Beings (if graph is empty)
+- **Migrates legacy backends** cleanly — v0.2.x users get hooks updated, MCP entries fixed
 - **Version-tracked** in `.beings/.protocol-version`
 
 Use `--yes` when running via `curl | bash` since there's no TTY for prompts.
@@ -222,19 +239,17 @@ A **Being** is different:
 
 ## 🛠️ Supported Tools
 
-`AGENTS.md` is the **universal standard** — it works with most modern AI coding tools out of the box. The installer also creates tool-specific configs for deeper integration:
+`AGENTS.md` is the **universal standard** — it works with most modern AI coding tools out of the box. The installer creates tool-specific configs for deeper integration:
 
-| Tool | Universal (`AGENTS.md`) | Tool-Specific Config | Auto-detected |
-|------|:-----------------------:|---------------------|:-------------:|
-| **Cursor** | ✅ | `.cursor/rules/beings-protocol.mdc` | ✅ |
-| **Claude Code** | ✅ | `CLAUDE.md` | ✅ |
-| **GitHub Copilot** | ✅ | `.github/copilot-instructions.md` | ✅ |
-| **Codex (OpenAI)** | ✅ | — (uses `AGENTS.md` natively) | ✅ |
-| **Windsurf** | — | `.windsurfrules` | ✅ |
-| **Aider** | — | `.aider.conf.yml` | ✅ |
-| **Any other** | ✅ | `prompts/system-prompt.md` | Manual |
+| Tool | Universal (`AGENTS.md`) | Tool-Specific Config | Hooks | Auto-detected |
+|------|:-----------------------:|---------------------|:-----:|:-------------:|
+| **Claude Code** | ✅ | `CLAUDE.md` | ✅ 6 hooks | ✅ |
+| **Cursor** | ✅ | `.cursor/rules/beings-protocol.mdc` | — (manual) | ✅ |
+| **Codex (OpenAI)** | ✅ | `~/.codex/instructions.md` | — (manual) | ✅ |
 
-> **💡 Tip:** Even if you don't configure any specific tool, the root `AGENTS.md` will make the Beings Protocol work with most modern AI coding tools automatically.
+> **Cursor and Codex** have no hook system. The templates include an explicit "Memory Management (Manual)" section so Beings on those platforms manage memory discipline through instructions rather than automation.
+
+> **💡 Tip:** Even if you don't configure any specific tool, the root `AGENTS.md` works with any AI coding tool that reads markdown instructions.
 
 ## 📁 The Files
 
