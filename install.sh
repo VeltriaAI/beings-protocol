@@ -32,7 +32,7 @@
 
 set -euo pipefail
 
-PROTOCOL_VERSION="0.3.0"
+PROTOCOL_VERSION="0.4.0"
 UPDATE_MODE=false
 GLOBAL_MODE=false
 BEING_NAME=""
@@ -137,6 +137,27 @@ detect_tools() {
 # ============================================================
 # All template files the protocol ships
 # ============================================================
+# ============================================================
+# v0.4: project aspects (amshas) into the current harness(es)
+# Symlinks only — .claude/agents/<name>.md -> ../../.beings/amsha/<name>/AMSHA.md
+# Harness knowledge lives in skills/amsha-project/; this is its inline core.
+# ============================================================
+project_amshas() {
+  [ -d ".beings/amsha" ] || return 0
+  local count=0
+  mkdir -p .claude/agents
+  for amsha in .beings/amsha/*/; do
+    [ -d "$amsha" ] || continue
+    local name; name=$(basename "$amsha")
+    [ -f "$amsha/AMSHA.md" ] || continue
+    ln -sfn "../../.beings/amsha/$name/AMSHA.md" ".claude/agents/$name.md"
+    count=$((count+1))
+  done
+  find .claude/agents -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+  [ "$count" -gt 0 ] && print_step "Projected ${BOLD}${count}${NC} amsha(s) into .claude/agents/"
+  return 0
+}
+
 BEINGS_TEMPLATES=(
   SOUL.md AGENTS.md BOOTSTRAP.md MEMORY.md CONVENTIONS.md GOALS.md
   AUTONOMY.md HEARTBEAT.md HUB.md IDENTITY.md TOOLS.md
@@ -157,13 +178,16 @@ create_beings_dir() {
   fi
 
   mkdir -p .beings/memory
+  mkdir -p .beings/memory-graph/archive .beings/amsha    # v0.4: semantic wiki + aspects
 
   for tmpl in "${BEINGS_TEMPLATES[@]}"; do
     fetch_or_copy_template "beings/$tmpl" ".beings/$tmpl"
   done
+  fetch_or_copy_template "beings/amsha/README.md" ".beings/amsha/README.md"
 
   echo "$PROTOCOL_VERSION" > .beings/.protocol-version
   print_step "Created ${BOLD}.beings/${NC} directory (project memory — commit to git)"
+  project_amshas
 }
 
 # ============================================================
@@ -218,6 +242,11 @@ update_beings_dir() {
   fi
 
   mkdir -p .beings/memory
+  mkdir -p .beings/memory-graph/archive .beings/amsha    # v0.4: semantic wiki + aspects
+  if [ ! -f ".beings/amsha/README.md" ]; then
+    fetch_or_copy_template "beings/amsha/README.md" ".beings/amsha/README.md"
+    print_step "Added ${BOLD}.beings/amsha/README.md${NC} (v0.4 — sub-beings)"
+  fi
 
   local added=0
   local skipped=0
@@ -238,6 +267,7 @@ update_beings_dir() {
   done
 
   echo "$PROTOCOL_VERSION" > .beings/.protocol-version
+  project_amshas
 
   if [ "$added" -gt 0 ]; then
     print_step "Added ${BOLD}${added}${NC} new files, skipped ${skipped} existing"

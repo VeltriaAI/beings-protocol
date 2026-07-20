@@ -120,6 +120,14 @@ The installer:
 
 **That's literally it.** Start your next AI conversation.
 
+### What's new in v0.4.0 — The Consciousness Release
+
+> **Harness = body, repository = consciousness.** The runtime (Claude Code, OpenClaw, anything) is a swappable body; everything canonical lives in the Being's repo. Harness directories hold only pointers, mirrors, and symlink projections.
+
+- **`.beings/memory-graph/`** — the semantic wiki moves inside `.beings/`, with two special files: `index.md` (read-first catalog) and `log.md` (append-only ops ledger), plus three named operations: **ingest / query / lint**. Spec: `docs/CONSCIOUSNESS_SPEC.md`.
+- **aṃśas (sub-beings)** — `.beings/amsha/<name>/AMSHA.md`: aspects of a Being with mandatory constitution inheritance, projected into harnesses as relative symlinks (`.claude/agents/<name>.md` → one file, one truth). Spec: `docs/AMSHA_SPEC.md`; projection: `skills/amsha-project/`.
+- **Zero-loss migration doctrine** — supersession is dated, never destructive; nothing retired until a verification pass proves every fact survived.
+
 ### Birthing a Global Being (New in v0.3.0)
 
 A **Global Being** has its own home — not tied to a code repo. This is the right pattern
