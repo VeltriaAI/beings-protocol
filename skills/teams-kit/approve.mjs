@@ -11,6 +11,7 @@ import { logComms } from './comms-log.mjs';
 import { toHtml } from './fmt.mjs';
 import { findSecrets } from './secrets.mjs';
 import { MAX_AGE_H, chatLabel, checkCommand, checkPrompt, parseCommand } from './approval.mjs';
+import { kitEnv, ownerDelegate } from './kit-env.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (f) => { const i = argv.indexOf(f); return i === -1 ? '' : (argv[i + 1] ?? ''); };
@@ -35,24 +36,32 @@ if (verb === 'skip') { save('skipped'); logComms({ dir: 'draft', kind: 'skipped'
 const isMail = d.kind === 'mail';
 if (verb === 'save' && !isMail) stop(`${id} is a Teams draft; only email drafts can be saved to Outlook.`);
 
-const OWNER = need('OWNER_UPN');
-if (!process.env.OWNER_CACHE) stop(`No owner sign-in on this host, so I cannot send ${id} as you; copy it from the prompt and send it yourself.`);
-const { g, me } = await connect({ upn: OWNER, cache: need('OWNER_CACHE'),
+// Owner identity and sign-in come from the on-disk .env; the delegate sign-in is opt-in (BEING_OWNER_DELEGATE=1).
+const kenv = kitEnv();
+const OWNER = kenv.OWNER_UPN || need('OWNER_UPN');
+if (!ownerDelegate(kenv)) stop(`No owner sign-in on this host, so I cannot send ${id} as you; copy it from the prompt and send it yourself.`);
+const { g, me } = await connect({ upn: OWNER, cache: kenv.OWNER_CACHE,
   scopes: isMail ? ['Mail.Send', 'Mail.ReadWrite', 'Chat.ReadWrite', 'User.Read'] : ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
-if (me.id !== need('OWNER_OID')) stop(`Owner sign-in does not match OWNER_OID; nothing sent.`);
+if (me.id !== (kenv.OWNER_OID || need('OWNER_OID'))) stop(`Owner sign-in does not match OWNER_OID; nothing sent.`);
 
 // 1) The command must be the owner's own message, in their 1:1 with the Being, used once.
 const used = new Set(existsSync(USED) ? readFileSync(USED, 'utf8').split('\n').filter(Boolean) : []);
+// Messages the kit posted itself (comms log): a kit-authored "send Dn" is never an owner command.
+const COMMS = process.env.BEING_COMMS_LOG || path.join(stateDir(), 'comms.jsonl');
+const kitSent = new Set();
+if (existsSync(COMMS)) for (const l of readFileSync(COMMS, 'utf8').split('\n')) {
+  try { const e = JSON.parse(l); if (e.dir === 'out' && e.messageId) kitSent.add(e.messageId); } catch {}
+}
 let refusal, cmd, beingId;
 try {
   const chat = await g(`/chats/${encodeURIComponent(CHAT)}?$expand=members`);
   cmd = await g(`/chats/${encodeURIComponent(CHAT)}/messages/${encodeURIComponent(MSG)}`);
   beingId = (chat.members || []).find((m) => (m.email || '').toLowerCase() === need('BEING_UPN').toLowerCase())?.userId;
-  refusal = checkCommand({ msg: cmd, chat, members: chat.members, ownerOid: me.id, beingUpn: need('BEING_UPN'), verb, id, draft: d, used });
+  refusal = checkCommand({ msg: cmd, chat, members: chat.members, ownerOid: me.id, beingUpn: need('BEING_UPN'), verb, id, draft: d, used, kitSent });
   // 2) The prompt the owner saw must be the Being's and carry this draft's fingerprint.
   if (!refusal) {
     const prompt = await g(`/chats/${encodeURIComponent(d.promptChatId)}/messages/${encodeURIComponent(d.promptMessageId)}`);
-    refusal = checkPrompt({ promptMsg: prompt, beingId, draft: d });
+    refusal = checkPrompt({ promptMsg: prompt, beingId, draft: d, cmdAt: Date.parse(cmd.createdDateTime) });
   }
   // 3) A Teams target must still resolve to the chat the prompt named.
   if (!refusal && !isMail) {

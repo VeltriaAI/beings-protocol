@@ -1,6 +1,8 @@
-// Draft approval rules shared by draft-for-owner.mjs and approve.mjs; pure functions so they are unit-tested.
+// Draft approval rules shared by draft-for-owner.mjs and approve.mjs; small functions so they are unit-tested.
 // A draft is sent only when the owner's own Teams message approves it and the prompt they saw matches the stored draft.
 import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
 import { strip } from './strip.mjs';
 
 export const MAX_AGE_H = 24;
@@ -12,6 +14,17 @@ const canon = (d) => JSON.stringify({ kind: d.kind, chatId: d.chatId || '', targ
   cc: d.cc || [], subject: d.subject || '', replyTo: d.replyTo || '', text: d.text,
   attach: (d.attach || []).map((a) => [a.name, a.sha256]) });
 export const fingerprint = (d) => createHash('sha256').update(canon(d)).digest('hex').slice(0, 12);
+
+// Next free draft id. Each id is claimed by an exclusive create, so concurrent runs never share one.
+export function allocDraftId(dir) {
+  const nf = path.join(dir, 'next-id');
+  let n = Math.max(1, parseInt(existsSync(nf) ? readFileSync(nf, 'utf8') : '1', 10) || 1);
+  for (;; n++) {
+    try { writeFileSync(path.join(dir, `D${n}.json`), '{}', { flag: 'wx', mode: 0o600 }); break; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
+  writeFileSync(nf, String(n + 1));
+  return `D${n}`;
+}
 
 export function parseCommand(text) {
   const m = COMMAND_RE.exec(String(text || '').trim());
@@ -42,9 +55,12 @@ export function renderPrompt(d, bodyHtml) {
 }
 
 // Checks the owner's command message as returned by Graph. Returns an error string, or null when it may proceed.
-export function checkCommand({ msg, chat, members, ownerOid, beingUpn, verb, id, draft, used, now = Date.now() }) {
+// kitSent: ids of messages the kit itself posted (any identity), so a kit-authored "send Dn" never counts.
+export function checkCommand({ msg, chat, members, ownerOid, beingUpn, verb, id, draft, used, kitSent = new Set(), now = Date.now() }) {
   if (!msg || !chat) return 'command message not found';
   if (used.has(msg.id)) return 'that command was already used';
+  if (kitSent.has(msg.id)) return 'command was posted by the kit, not typed by the owner';
+  if (msg.from?.application || msg.from?.device) return 'command was posted by an app, not typed by the owner';
   if (msg.from?.user?.id !== ownerOid) return 'command was not written by the owner';
   if (msg.messageType && msg.messageType !== 'message') return 'command is not a chat message';
   if (chat.chatType !== 'oneOnOne') return 'command is not in a 1:1 chat';
@@ -61,9 +77,15 @@ export function checkCommand({ msg, chat, members, ownerOid, beingUpn, verb, id,
 }
 
 // Checks that the approval prompt the owner saw was posted by the Being and carries this draft's fingerprint.
-export function checkPrompt({ promptMsg, beingId, draft }) {
+// cmdAt: when the owner's command was written; a prompt edited or changed after that is refused.
+export function checkPrompt({ promptMsg, beingId, draft, cmdAt }) {
   if (!promptMsg) return 'approval prompt not found';
   if (promptMsg.from?.user?.id !== beingId) return 'approval prompt was not posted by the Being';
+  if (promptMsg.deletedDateTime) return 'approval prompt was deleted';
+  if (promptMsg.lastEditedDateTime) return 'approval prompt was edited after it was posted';
+  if (cmdAt !== undefined && !(Date.parse(promptMsg.lastModifiedDateTime || promptMsg.createdDateTime || '') <= cmdAt)) {
+    return 'approval prompt changed after the owner\'s command';
+  }
   const t = strip(promptMsg.body?.content);
   if (!new RegExp(`\\bDraft ${draft.id}\\b`).test(t)) return 'approval prompt is for another draft';
   const fp = fingerprint(draft);

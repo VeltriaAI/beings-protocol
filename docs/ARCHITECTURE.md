@@ -76,7 +76,7 @@ flowchart TB
   TM["Teammates"] -->|1:1, @mention, name in text| TEAMS
   TEAMS -->|Graph API, polled every 30 s| WATCH["being-teams watcher"]
   MAIL["Being's mailbox"] -->|polled, log + notify only| WATCH
-  OWN["Owner's chats + mail"] -->|optional delegate sign-in, read-only| WATCH
+  OWN["Owner's chats + mail"] -->|opt-in owner sign-in, read-only| WATCH
   WATCH -->|queue.jsonl| HANDLE["being-handle"]
   HANDLE -->|triage + voice| FAST["Fast daily session"]
   HANDLE -->|work| WORK["Work daily session"]
@@ -340,14 +340,14 @@ never replies to its own messages, never auto-replies to mail, and puts nothing 
 
 | Guard | How |
 |---|---|
-| Right identity | Sign-in refuses any other account; every send resolves `/me` and aborts if it is not the Being |
-| Send scope | Per-run grant minted by the handler (`full`, `owner-only` or `chats:<ids>`); no grant = owner-only; other targets, new chats and mail exit 3 |
+| Right identity | Sign-in refuses any other account; every send resolves `/me` and aborts if it is not the Being; senders refuse the owner's UPN, cache or id |
+| Send scope | Per-run grant minted by the handler with its key (`full`, `owner-only` or `chats:<ids>`); no or unsigned grant = owner-only; other targets, new chats and mail exit 3 |
 | Secret filter | Senders refuse text quoting `.env` values, `.env` lines, tokens or keys |
-| Separate runs per lane | The owner's messages and everyone else's never share a model call |
+| Separate runs per lane | The owner's messages and everyone else's never share a model call; one call per teammate chat |
 | Owner data isolation | Read-only views of the owner's chats and mail need an owner-lane grant |
 | Jobs inherit scope | A job started from a teammate request reports only where it came from |
 | Sending as the owner | Only `approve.mjs`: no model; the owner's typed command and the fingerprinted prompt are re-read from Graph; drafts under 24 h; logged |
-| Limits | Same OS user for kit and model stops mistakes, not a determined injection with shell access; see the threat model in the Teams `GUARDRAILS.md` |
+| Limits | Same OS user for kit and model: mistakes only (doctor fails). Injection resistance needs the two-user layout; see the threat model in the Teams `GUARDRAILS.md` |
 
 ```mermaid
 sequenceDiagram

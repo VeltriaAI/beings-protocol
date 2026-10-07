@@ -3,7 +3,7 @@
 // Usage: README.md "Script reference".
 import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { connect, need, fail, strip, standby } from './graph.mjs';
+import { connect, need, fail, strip, standby, beingSender } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { currentScope } from './scope.mjs';
 import { findSecrets } from './secrets.mjs';
@@ -14,7 +14,9 @@ const has = (f) => args.includes(f);
 const UPN = need('BEING_UPN').toLowerCase();
 if (has('--send') && standby()) fail('standby host: sending disabled', 3);
 if (has('--send') && process.env.BEING_READ_ONLY) fail('read-only mailbox view', 2);
-const { g } = await connect({ upn: UPN, scopes: has('--send') ? ['Mail.ReadWrite', 'Mail.Send', 'User.Read'] : ['Mail.Read', 'User.Read'] });
+// owner-mail reuses this file read-only with the owner's cache; sending is the Being's only.
+if (has('--send')) beingSender();
+const { g } = await connect({ upn: UPN, sender: has('--send'), scopes: has('--send') ? ['Mail.ReadWrite', 'Mail.Send', 'User.Read'] : ['Mail.Read', 'User.Read'] });
 const addr = (r) => r?.emailAddress?.address || '';
 const SEL = '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,bodyPreview,hasAttachments';
 const top = parseInt(opt('--top') || '15', 10);

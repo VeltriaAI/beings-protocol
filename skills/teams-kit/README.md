@@ -28,7 +28,7 @@ without reloading it for every message. `bin/<name> claude today` / `codex today
 | `teams-*.mjs`, `mail.mjs` | Graph calls: detect, read, send, ack, presence, mailbox |
 | `draft-for-owner.mjs`, `approve.mjs`, `approval.mjs` | write as the owner only via a draft the owner approves in Teams |
 | `scope.mjs`, `secrets.mjs` | per-run send grants; outgoing-text secret filter |
-| `owner-read`, `owner-mail` | read-only views of the owner's chats and mail (optional delegate sign-in) |
+| `owner-read`, `owner-mail` | read-only views of the owner's chats and mail (owner sign-in: opt-in, two-user hosts only) |
 | `GUARDRAILS.md` | what is automatic, what is enforced, what is never allowed |
 
 ## Set up (about 15 minutes once the account exists)
@@ -41,11 +41,13 @@ without reloading it for every message. `bin/<name> claude today` / `codex today
 3. **Sign in as the Being** (device code; refuses any other account):
    `set -a; . ./.env; set +a; node teams-login-device.mjs --upn "$BEING_UPN" --cache "$BEING_CACHE"`
 4. **Owner ids.** `OWNER_UPN` and `OWNER_OID` (the owner's object id; visible in the Entra portal).
-5. **Optional delegate sign-in for the owner**, in a separate cache, narrowed scopes. Read the threat model in
-   `GUARDRAILS.md` first: on a host where the model runs as the same OS user, a prompt-injected run could use this token.
+5. **Owner delegate sign-in: off by default; two-user hosts only.** On a host where the model runs as the same OS user,
+   a prompt-injected run can read this token and post as the owner; no check can stop that (`GUARDRAILS.md`, Threat model).
+   Only on a two-user host: set `BEING_OWNER_DELEGATE=1` in `.env`, then sign in to a separate cache with narrowed scopes:
    `node teams-login-device.mjs --upn "$OWNER_UPN" --cache "$OWNER_CACHE" --scopes Chat.ReadWrite,ChatMessage.Send,Mail.ReadWrite,Mail.Send,User.Read`
+   Without it, drafts still reach the owner with the text to send by hand.
 6. **Check:** `node teams-send-dm.mjs --whoami`, then `echo hello | node teams-send-dm.mjs` (lands in the owner's 1:1),
-   `npm test`, and `./being-teams doctor` (file modes and which isolation column of the threat model applies).
+   `npm test`, and `./being-teams doctor`. Doctor fails on a same-user host: there the kit stops mistakes, not injection.
 7. **Run:** `./being-teams up` (or `autostart on` for a systemd user unit). `./being-teams inbox` shows traffic.
 
 ## Talking to it
@@ -86,6 +88,7 @@ teams-read.mjs --whoami | --list [--top N] | --find <text> | <upn> [--top N]
 teams-read.mjs --chat <chatId> [--top N] | --since <messageId> (exit 2 if not found) | --members
     --as <upn>   read as another identity present in BEING_CACHE (used by owner-read)
 teams-send-dm.mjs [<upn>] < msg            1:1 with that person (default OWNER_UPN), created if missing
+    Every sender here posts only as the Being: the owner's UPN, cache or object id (kit .env on disk) exits 3.
 teams-send-dm.mjs --chat <chatId> < msg
     --reply-to <messageId>  quote it (with --chat defaults to BEING_REPLY_TO) | --no-quote
     --attach-url <url> [--attach-name <n>]  file card for a OneDrive/SharePoint item
@@ -98,24 +101,29 @@ teams-ack.mjs < {"messages":[detect hits],"actions":[{chatId,messageId,action,te
 teams-presence.mjs available | offline | status
     available lasts 15 min; the runner refreshes it every ~5 min, so Teams drops to Offline when it stops.
 teams-login-device.mjs --upn <user@your-tenant> --cache <file> [--scopes a,b,c]
+    The owner's UPN or cache is refused unless BEING_OWNER_DELEGATE=1 in .env (then a warning is printed).
 mail.mjs --list [--top N] [--unread] | --search <text> [--top N] | --read <id> | --attachments <id> [--save <dir>]
 mail.mjs --detect <ISO8601-watermark>      exit 0 none, 10 new (JSON on stdout), 1 error
 mail.mjs --send --to a[,b] --subject S [--cc c] [--attach f1,f2] < body.html   (each file < 3 MB)
 draft-for-owner.mjs --chat <owner chatId> [--re "<their message>"] < draft.md     target label resolved from Graph
+    Refused: a draft for the owner's 1:1 with the Being, or text that is itself a "send Dn" command.
 draft-for-owner.mjs --mail --to a[,b] [--cc c] --subject S [--reply-to <owner messageId>] [--attach /abs/f] < draft.md
 approve.mjs send|edit|skip|save <Dn> --chat <owner 1:1 chatId> --msg <owner's command messageId>
     Called by being-handle for commands the owner typed; re-reads the command and prompt from Graph (GUARDRAILS.md).
 scope.mjs mint <full|owner-only|chats:id,...> [ttlHours] | revoke < token | show | owner-read-ok | prune
-    Operators testing by hand: BEING_SEND_TOKEN=$(node scope.mjs mint full 1) node teams-send-dm.mjs --chat <id> < msg
+    mint is the handler's: it needs state/handler.key (0600). Grants without its HMAC are owner-only. In the two-user
+    layout only the kit user can read the key; on a same-user host any run can, so mint cannot be restricted (doctor fails).
 being-job agent <name> [--small] --notify <chatId> "<self-contained task>"   headless Claude Code
-being-job codex <name> --notify <chatId> "<self-contained task>"             Codex, workspace-write sandbox
+being-job codex <name> [--network] --notify <chatId> "<task>"               Codex, workspace-write sandbox, no network unless --network
     BEING_JOB_ADD_DIRS=/a:/b   extra dirs Codex may write (e.g. a repo worktree)
 being-job run <name> --notify <chatId> -- <command...>                     a plain command
 being-job list | status <id> | log <id> [n]
 being-blocker "<task>" "<what failed, with the exact error>" "<what you need from the owner>"
-being-teams doctor     .env and cache modes, and whether the model user can reach them (exit 1 if not isolated)
+being-teams doctor     file modes; FAIL (exit 1) on a same-user host, louder if an owner token is readable, or if the
+                       model user can reach .env, caches, grants or the handler key
 being-handle warm | triage | work | voice
     triage: queue.jsonl → owner decisions to approve.mjs → one fast-model call per chat → acks → work.jsonl
-    work:   work.jsonl → work session, one call per lane, each with a fresh grant revoked when the run ends
+            (fast client: no file tools, empty working directory; everything it needs is in the prompt)
+    work:   work.jsonl → work session, one call per lane and one per teammate chat, each with a fresh grant revoked at the end
     voice:  queued messages → fast model rewords → sent (after every work run)
 ```

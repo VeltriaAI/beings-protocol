@@ -1085,7 +1085,7 @@ KIT_TEMPLATES=(GUARDRAILS.md AUTONOMY-MATRIX.md JOB-CHECKLIST.md facts/_TEMPLATE
 # Listed explicitly so a curl install can fetch them; tests/install-kit.test.sh keeps these in sync with git.
 TEAMS_KIT_FILES=(
   .env.example .gitignore GUARDRAILS.md README.md SKILL.md ack-schema.json approval.mjs approval.test.mjs
-  comms-log.mjs fmt.mjs fmt.test.mjs graph.mjs package.json reply-ref.mjs scope.mjs scope.test.mjs secrets.mjs
+  comms-log.mjs fmt.mjs fmt.test.mjs graph.mjs kit-env.mjs kit-env.test.mjs package.json reply-ref.mjs scope.mjs scope.test.mjs secrets.mjs
   secrets.test.mjs strip.mjs voice-schema.json
 )
 TEAMS_KIT_EXEC=(
@@ -1099,8 +1099,9 @@ KIT_KEPT=0
 kit_wants() { [[ ",$WITH_COMPONENTS," == *",$1,"* ]]; }
 
 # Escape for the replacement side of s/…/…/, and single-quote for a bash-sourced .env.
+# sed, not ${var//\'/…}: bash 3.2 (macOS) handles quotes in that replacement differently.
 sed_lit() { printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'; }
-shq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 # Fetch a repo file (not only templates/) from this checkout or from BASE_URL.
 fetch_or_copy_file() {
@@ -1254,10 +1255,11 @@ kit_teams() {
     chmod 600 "$dst/.env"
     print_step "Created ${BOLD}${dst}/.env${NC} (0600, prefilled — fill the rest)"
   else
-    # Merge: append settings that are new in .env.example; existing values stay.
-    local missing
+    # Merge: append settings that are new upstream (a changed .env.example is staged in .kit-upgrade/); existing values stay.
+    local missing example="$dst/.env.example"
+    [ -f "$dst/.kit-upgrade/.env.example" ] && example="$dst/.kit-upgrade/.env.example"
     missing="$(awk -F= 'NR==FNR { if ($0 ~ /^[A-Z0-9_]+=/) have[$1]=1; next }
-                        /^[A-Z0-9_]+=/ && !($1 in have)' "$dst/.env" "$dst/.env.example")"
+                        /^[A-Z0-9_]+=/ && !($1 in have)' "$dst/.env" "$example")"
     if [ -n "$missing" ]; then
       printf '\n# Added by install.sh --update (kit v%s)\n%s\n' "$KIT_VERSION" "$missing" >> "$dst/.env"
       print_step "Added new settings to ${BOLD}${dst}/.env${NC}: $(echo "$missing" | cut -d= -f1 | tr '\n' ' ')"

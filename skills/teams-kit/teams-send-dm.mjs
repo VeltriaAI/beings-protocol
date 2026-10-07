@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { connect, need, fail, standby, stateDir } from './graph.mjs';
+import { connect, need, fail, standby, stateDir, beingSender } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { replyRef, autoReplyTarget } from './reply-ref.mjs';
 import { ensureHtml } from './fmt.mjs';
@@ -17,12 +17,13 @@ const take = (f) => { const i = args.indexOf(f); if (i === -1) return null; cons
 const flag = (f) => { const i = args.indexOf(f); if (i === -1) return false; args.splice(i, 1); return true; };
 const CHAT_ID = take('--chat'), REPLY_TO = take('--reply-to'), ATTACH_URL = take('--attach-url'), ATTACH_NAME = take('--attach-name');
 const NO_QUOTE = flag('--no-quote'), VERBATIM = flag('--verbatim'), WHOAMI = flag('--whoami');
+const SENDER = beingSender();   // before any network call: never the owner's identity
 if (standby() && !WHOAMI) fail('standby host: sending disabled', 3);
 if (CHAT_ID && args.length) fail(`unexpected argument "${args[0].slice(0, 40)}"; pipe the message on stdin`, 2);
 const OWNER = need('OWNER_UPN').toLowerCase();
 const RECIPIENT = (args[0] || OWNER).toLowerCase();
 
-const { g, me, tokenFor } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'Chat.Create', 'User.Read'] });
+const { g, me, tokenFor } = await connect({ ...SENDER, sender: true, scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'Chat.Create', 'User.Read'] });
 console.error(`sending as ${me.userPrincipalName} → ${CHAT_ID ? `chat ${CHAT_ID}` : RECIPIENT}`);
 if (WHOAMI) { console.log(`verified sender: ${me.userPrincipalName}`); process.exit(0); }
 

@@ -3,12 +3,13 @@
 // Usage: README.md "Script reference".
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { connect, need, stateDir, standby, fail } from './graph.mjs';
+import { connect, stateDir, standby, fail, beingSender } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { replyRef } from './reply-ref.mjs';
 import { toHtml } from './fmt.mjs';
 import { findSecrets } from './secrets.mjs';
 
+const SENDER = beingSender();
 if (standby()) fail('standby host: acknowledgements disabled', 3);
 const ACKED = path.join(stateDir(), 'acked-ids.txt');
 const EMOJI = new Set(['👍', '❤️', '😆', '😮', '🙏', '🔥', '✅', '🎉', '👀', '💯', '🚀', '🙌', '👌', '😊', '💪']);
@@ -22,7 +23,7 @@ const acked = new Set(existsSync(ACKED) ? readFileSync(ACKED, 'utf8').split('\n'
 const todo = (input.messages || []).filter((m) => m.messageId && m.addressedBy !== 'reaction' && !acked.has(m.messageId));
 if (!todo.length) process.exit(0);
 
-const { g } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
+const { g } = await connect({ ...SENDER, sender: true, scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
 let failed = 0;
 for (const m of todo) {
   logComms({ dir: 'in', chatId: m.chatId, chatType: m.chatType, topic: m.topic, from: m.from, at: m.at,

@@ -2,6 +2,7 @@
 import { PublicClientApplication } from '@azure/msal-node';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { ownerMatch } from './kit-env.mjs';
 
 export const need = (k) => {
   const v = process.env[k];
@@ -15,6 +16,17 @@ export const standby = () => existsSync(path.join(stateDir(), 'STANDBY'));
 
 export { strip } from './strip.mjs';
 
+// Every sender except approve.mjs posts only as the Being: refuse the owner's UPN, cache file or object id (exit 3).
+export function refuseOwner(id) {
+  const why = ownerMatch(id);
+  if (why) fail(`blocked: sender resolves to the owner (${why}); only approve.mjs sends as the owner, nothing sent`, 3);
+}
+export function beingSender() {
+  const id = { upn: need('BEING_UPN'), cache: need('BEING_CACHE') };
+  refuseOwner(id);
+  return id;
+}
+
 export function msal(cache) {
   return new PublicClientApplication({
     auth: { clientId: need('M365_CLIENT_ID'), authority: `https://login.microsoftonline.com/${need('M365_TENANT_ID')}` },
@@ -27,8 +39,9 @@ export function msal(cache) {
 }
 
 // Graph client for exactly `upn` (never "first account in cache"), verified with /me before returning.
-export async function connect({ upn, scopes, cache = need('BEING_CACHE') }) {
+export async function connect({ upn, scopes, cache = need('BEING_CACHE'), sender = false }) {
   const want = upn.toLowerCase();
+  if (sender) refuseOwner({ upn, cache });
   const app = msal(cache);
   const accounts = await app.getTokenCache().getAllAccounts();
   const account = accounts.find((a) => (a.username || '').toLowerCase() === want);
@@ -48,5 +61,6 @@ export async function connect({ upn, scopes, cache = need('BEING_CACHE') }) {
   };
   const me = await g('/me').catch((e) => fail(`/me failed: ${e.message}`));
   if ((me.userPrincipalName || '').toLowerCase() !== want) fail(`token resolves to ${me.userPrincipalName}, not ${want}; aborting`);
+  if (sender) refuseOwner({ oid: me.id });
   return { g, me, token, tokenFor };
 }

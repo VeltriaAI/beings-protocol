@@ -58,7 +58,7 @@ loop() {
     fi
     (( rc == 0 )) && echo "$start" >"$WM"
     # Delegate lane: messages to the owner (outside the owner's chat with the Being) are logged for drafts on request.
-    if [[ -s "${OWNER_CACHE:-}" && -n "${OWNER_OID:-}" ]]; then
+    if [[ "${BEING_OWNER_DELEGATE:-0}" == 1 && -s "${OWNER_CACHE:-}" && -n "${OWNER_OID:-}" ]]; then
       [[ -s "$OWM" ]] || echo "$start" >"$OWM"
       set +e; oout=$(BEING_CACHE="$OWNER_CACHE" BEING_UPN="$OWNER_UPN" BEING_NAME="${OWNER_NAME:-owner}" \
         node teams-detect.mjs "$(cat "$OWM")" 2>>"$LOG"); orc=$?; set -e
@@ -122,26 +122,36 @@ case "${1:-status}" in
     alive && echo "loop: up (pid $(cat "$PIDF"))" || echo "loop: down"
     echo "watermark: teams $(cat "$WM" 2>/dev/null || echo none) · mail $(cat "$MWM" 2>/dev/null || echo none)"
     (cd "$KIT" && echo "presence: $(node teams-presence.mjs status 2>/dev/null || echo unknown)") ;;
-  doctor)   # how far the guarantees in GUARDRAILS.md "Threat model" hold on this host
-    python3 - "$KIT" "$STATE" "${BEING_CACHE:-}" "${OWNER_CACHE:-}" "${BEING_MODEL_USER:-}" <<'PY' ;;
-import os,sys,stat,pwd
-kit,state,bc,oc,model=sys.argv[1:6]; me=pwd.getpwuid(os.getuid()).pw_name; bad=0
+  doctor)   # how far the guarantees in GUARDRAILS.md "Threat model" hold on this host; exit 1 on any FAIL
+    python3 - "$KIT" "$STATE" "${BEING_CACHE:-}" "${OWNER_CACHE:-}" "${BEING_MODEL_USER:-}" "${BEING_OWNER_DELEGATE:-0}" <<'PY' ;;
+import os,sys,stat,pwd,shutil,subprocess
+kit,state,bc,oc,model,deleg=sys.argv[1:7]; me=pwd.getpwuid(os.getuid()).pw_name; bad=0
+key=os.path.join(state,"handler.key")
 def mode(p): return stat.S_IMODE(os.stat(p).st_mode)
-for label,p in (("kit .env",os.path.join(kit,".env")),("Being token cache",bc),("owner token cache",oc)):
-    if not p or not os.path.exists(p): print(f"  -  {label}: not present"); continue
-    ok=mode(p)&0o077==0; bad+=not ok
-    print(f"  {'ok' if ok else '!!'} {label}: mode {oct(mode(p))}{'' if ok else ' (chmod 600)'}")
+def fail(msg):
+    global bad; bad+=1; print(f"  FAIL {msg}")
+for label,p in (("kit .env",os.path.join(kit,".env")),("Being token cache",bc),("owner token cache",oc),("handler key",key)):
+    if not p or not os.path.exists(p): print(f"  -    {label}: not present"); continue
+    if mode(p)&0o077: fail(f"{label}: mode {oct(mode(p))} (chmod 600)")
+    else: print(f"  ok   {label}: mode {oct(mode(p))}")
+owner_on=deleg=="1" or bool(oc and os.path.exists(oc))
 if not model or model==me:
-    print(f"  !! isolation: model runs as {me}, the same user that holds .env and the token caches.")
-    print("     Send scopes and owner approvals stop mistakes, not a prompt-injected model (GUARDRAILS.md, Threat model).")
+    fail(f"isolation: the model runs as {me}, the user that holds .env, the token caches and the handler key.")
+    print("       Scopes and approvals stop mistakes only, not a prompt-injected run (GUARDRAILS.md, Threat model).")
+    fail("minting: any run can read state/handler.key and mint itself a full grant; this cannot be enforced on one user.")
+    if owner_on:
+        fail("owner sign-in on a same-user host: a run can read the owner's token and post as the owner.")
+        print("       Set BEING_OWNER_DELEGATE=0 and delete OWNER_CACHE, or move to the two-user layout.")
     sys.exit(1)
 uid=pwd.getpwnam(model).pw_uid
-for p in (kit,os.path.join(kit,".env"),state,os.path.join(state,"grants"),bc,oc):
+for p in (kit,os.path.join(kit,".env"),state,os.path.join(state,"grants"),key,bc,oc):
     if not p or not os.path.exists(p): continue
     st=os.stat(p); m=stat.S_IMODE(st.st_mode)
     if st.st_uid==uid or m&0o002 or (os.path.isfile(p) and m&0o044) or (p!=kit and m&0o055 and os.path.isdir(p)):
-        bad+=1; print(f"  !! {p}: reachable by {model} (owner uid {st.st_uid}, mode {oct(m)})")
-print(f"  {'ok' if not bad else '!!'} isolation: kit files held by {me} are out of {model}'s reach (running models as {model} is host setup)")
+        fail(f"{p}: reachable by {model} (owner uid {st.st_uid}, mode {oct(m)})")
+    elif os.path.isfile(p) and shutil.which("sudo") and subprocess.run(["sudo","-n","-u",model,"test","-r",p],capture_output=True).returncode==0:
+        fail(f"{p}: readable by {model} (checked with sudo)")
+if not bad: print(f"  ok   isolation: .env, caches, grants and handler key held by {me} are out of {model}'s reach")
 sys.exit(1 if bad else 0)
 PY
   logs) tail -n "${2:-40}" "$LOG" ;;

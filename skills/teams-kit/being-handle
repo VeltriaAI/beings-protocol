@@ -33,17 +33,18 @@ render() {   # fill {{…}} placeholders in static prompt text
   printf '%s' "$s"
 }
 
-fast_daily() {   # $1 prompt, $2 output JSON file, $3 schema; read-only, in today's fast session
+fast_daily() {   # $1 prompt, $2 output JSON file, $3 schema; today's fast session, everything it needs is in the prompt
   local prompt=$1 out=$2 schema=${3:-$KIT/ack-schema.json} rc
-  mkdir -p "$STATE/fast-daily"
+  # Runs in an empty directory, not the workspace: triage and voice have no reason to open files.
+  local fcwd="$STATE/fast-cwd"; mkdir -p "$STATE/fast-daily" "$fcwd"
   set +e
   if [[ "${BEING_FAST_CLIENT:-codex}" == codex ]]; then
     local idf="$STATE/fast-daily/$day.id" ev="$STATE/fast-events.$$.jsonl"
     local common=(--skip-git-repo-check -c "model_reasoning_effort=${BEING_FAST_EFFORT:-low}" -c sandbox_mode=read-only --output-schema "$schema" -o "$out")
     if [[ -s "$idf" ]]; then
-      (cd "$WORKSPACE" && codex exec resume "$(cat "$idf")" "${common[@]}" "$prompt" </dev/null >/dev/null 2>>"$STATE/fast.log"); rc=$?
+      (cd "$fcwd" && codex exec resume "$(cat "$idf")" "${common[@]}" "$prompt" </dev/null >/dev/null 2>>"$STATE/fast.log"); rc=$?
     else
-      (cd "$WORKSPACE" && codex exec -C "$WORKSPACE" --json "${common[@]}" "$prompt" </dev/null >"$ev" 2>>"$STATE/fast.log"); rc=$?
+      (cd "$fcwd" && codex exec -C "$fcwd" --json "${common[@]}" "$prompt" </dev/null >"$ev" 2>>"$STATE/fast.log"); rc=$?
       python3 -c 'import json,sys
 for l in open(sys.argv[1]):
     try: e=json.loads(l)
@@ -52,11 +53,12 @@ for l in open(sys.argv[1]):
       [[ -s "$idf" ]] || rm -f "$idf"; rm -f "$ev"
     fi
   else
-    # Claude as the fast client: read-only tools, JSON extracted from the reply.
-    local sid args raw="$STATE/fast-raw.$$.txt"
+    # Claude as the fast client: no tools at all, JSON extracted from the reply.
+    local sid args raw="$STATE/fast-raw.$$.txt" cdir
+    cdir="$HOME/.claude/projects/$(readlink -f "$fcwd" | sed 's#[/.]#-#g')"
     sid=$(uuid5 "being-fast/$BEING_NAME/$day"); args=(--session-id "$sid")
-    [[ -f "$CLAUDE_DIR/$sid.jsonl" ]] && args=(--resume "$sid")
-    (cd "$WORKSPACE" && claude -p --model "${BEING_FAST_MODEL:-haiku}" --allowedTools "Read,Grep,Glob" "${args[@]}" \
+    [[ -f "$cdir/$sid.jsonl" ]] && args=(--resume "$sid")
+    (cd "$fcwd" && claude -p --model "${BEING_FAST_MODEL:-haiku}" --tools "" "${args[@]}" \
       "$prompt
 Reply with ONLY one JSON object (no prose, no code fence) valid against this JSON Schema: $(tr -d '\n ' <"$schema")" </dev/null >"$raw" 2>>"$STATE/fast.log"); rc=$?
     python3 -c 'import json,sys
@@ -196,7 +198,7 @@ if [[ "$stage" == voice ]]; then voice_flush; exit 0; fi
 if [[ "$stage" == warm ]]; then
   [[ -s "$STATE/fast-daily/$day.id" ]] && exit 0
   out="$STATE/warm.$$.json"
-  if fast_daily "[Teams triage · $day] Session start. Load your context; messages follow in later turns. Return empty actions and summary 'ready'." "$out"; then
+  if fast_daily "[Teams triage · $day] Session start; messages follow in later turns. Return empty actions and summary 'ready'." "$out"; then
     log "fast session ready"; else log "fast warm-up failed"; fi
   rm -f "$out"; exit 0
 fi
@@ -286,18 +288,19 @@ fi
 # ---------- work stage ----------
 while [[ -s "$STATE/work.jsonl" ]]; do
   batch="$STATE/work.$$.jsonl"; mv "$STATE/work.jsonl" "$batch"
-  # Lanes run as separate calls so a teammate's message never runs with the owner's scope.
+  # Lanes run as separate calls so a teammate's message never runs with the owner's scope; one call per teammate chat.
   python3 - "$batch" "${OWNER_OID:-}" "$STATE" "$$" <<'PY'
-import json,sys
-f,owner,st,pid=sys.argv[1:5]; parts={k:[] for k in ("job","owner","team","delegate")}
+import json,sys,collections
+f,owner,st,pid=sys.argv[1:5]; parts={k:[] for k in ("job","owner","delegate")}; team=collections.OrderedDict()
 for l in open(f):
     if not l.strip(): continue
     m=json.loads(l)
     if m.get("lane")=="job": parts["job"].append(l)
     elif m.get("lane")=="owner": parts["delegate"].append(l)
     elif owner and m.get("fromId")==owner and m.get("chatType")=="oneOnOne": parts["owner"].append(l)
-    else: parts["team"].append(l)
+    else: team.setdefault(m["chatId"],[]).append(l)
 for k,v in parts.items(): open(f"{st}/work-{k}.{pid}.jsonl","w").writelines(v)
+for i,v in enumerate(team.values()): open(f"{st}/work-team-{i:04d}.{pid}.jsonl","w").writelines(v)
 PY
   while IFS= read -r ev; do
     [[ -n "$ev" ]] || continue
@@ -312,13 +315,13 @@ $ev"
     (( rc != 0 )) && printf '%s\n' "$ev" >>"$STATE/failed.jsonl"
   done <"$STATE/work-job.$$.jsonl"
   rm -f "$STATE/work-job.$$.jsonl"
-  for part in owner team delegate; do
-    pf="$STATE/work-$part.$$.jsonl"
+  for pf in "$STATE/work-owner.$$.jsonl" "$STATE"/work-team-*."$$".jsonl "$STATE/work-delegate.$$.jsonl"; do
     [[ -s "$pf" ]] || { rm -f "$pf"; continue; }
+    part=$(basename "$pf"); part=${part#work-}; part=${part%%[.-]*}
     case $part in
       owner)    scope="full";       rules="$OWNER_RULES" ;;
       delegate) scope="owner-only"; rules="$DELEGATE_RULES" ;;
-      team)     scope="chats:$(python3 -c 'import json,sys; print(",".join(sorted({json.loads(l)["chatId"] for l in open(sys.argv[1]) if l.strip()})))' "$pf")"
+      team)     scope="chats:$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["chatId"])' "$pf")"
                 rules="$TEAM_RULES" ;;
     esac
     prompt="[$BEING_NAME Teams work · daily session $day · lane=$part]

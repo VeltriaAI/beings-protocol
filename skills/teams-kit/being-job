@@ -14,15 +14,15 @@ mkdir -p "$JOBS"
 
 json_get() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' "$1" "$2"; }
 
-start_job() {   # $1 kind, $2 name, $3 notify chat, $4 model, rest = payload
-  local kind=$1 name=$2 notify=$3 model=$4; shift 4
+start_job() {   # $1 kind, $2 name, $3 notify chat, $4 model, $5 network (0|1), rest = payload
+  local kind=$1 name=$2 notify=$3 model=$4 net=$5; shift 5
   local id; id="$(date +%m%d-%H%M%S)-$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '-' | cut -c1-24)"
   local scope; scope=$(node "$KIT/scope.mjs" show)
-  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "$scope" "${BEING_JOB_ADD_DIRS:-}" "$model" "$BEING_NAME" "$@" <<'PY'
+  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "$scope" "${BEING_JOB_ADD_DIRS:-}" "$model" "$BEING_NAME" "$net" "$@" <<'PY'
 import json,sys,datetime,uuid
-f,id_,kind,name,notify,scope,add_dirs,model,being,*payload=sys.argv[1:]
+f,id_,kind,name,notify,scope,add_dirs,model,being,net,*payload=sys.argv[1:]
 sid=str(uuid.uuid5(uuid.NAMESPACE_URL,f"being-job/{being}/{id_}")) if kind=="agent" else ""
-json.dump({"id":id_,"kind":kind,"name":name,"notify":notify,"scope":scope,"add_dirs":add_dirs,"model":model,"payload":payload,
+json.dump({"id":id_,"kind":kind,"name":name,"notify":notify,"scope":scope,"add_dirs":add_dirs,"model":model,"network":net=="1","payload":payload,
            "session_id":sid,"status":"running","started":datetime.datetime.now().astimezone().isoformat()},open(f,"w"),indent=2)
 PY
   setsid "$0" __exec "$id" </dev/null >/dev/null 2>&1 &
@@ -43,13 +43,15 @@ RULES=${RULES//\{\{KIT\}\}/$KREL}
 case "${1:-list}" in
   agent|codex|run)
     kind=$1; name=${2:?name}; shift 2
-    model="${BEING_JOB_MODEL:-opus}"
+    model="${BEING_JOB_MODEL:-opus}"; net=0
     [[ "${1:-}" == --small ]] && { model="${BEING_JOB_MODEL_SMALL:-sonnet}"; shift; }
+    # Codex jobs run without network unless the task needs it (--network, opt-in).
+    [[ "${1:-}" == --network ]] && { [[ $kind == codex ]] || { echo "--network applies to codex jobs only" >&2; exit 2; }; net=1; shift; }
     [[ "${1:-}" == --notify ]] || { echo "need --notify <chatId> (where to report the result)" >&2; exit 2; }
     notify=${2:?chatId}; shift 2
     [[ $kind == run && "${1:-}" == -- ]] && shift
     [[ $# -gt 0 ]] || { echo "nothing to run" >&2; exit 2; }
-    start_job "$kind" "$name" "$notify" "$model" "$@" ;;
+    start_job "$kind" "$name" "$notify" "$model" "$net" "$@" ;;
   __exec)
     id=$2; jf="$JOBS/$id.json"; log="$JOBS/$id.log"; result="$JOBS/$id.result.md"
     export BEING_SEND_TOKEN; BEING_SEND_TOKEN=$(node "$KIT/scope.mjs" mint "$(json_get "$jf" scope)" 48)
@@ -66,8 +68,9 @@ ${payload[*]}" </dev/null) >"$log" 2>&1
     elif [[ $kind == codex ]]; then
       extra=(); IFS=: read -ra dirs <<<"$(json_get "$jf" add_dirs)"
       for d in "${dirs[@]}"; do [[ -n $d ]] && extra+=(--add-dir "$d"); done
+      net=false; [[ "$(json_get "$jf" network)" == True ]] && net=true
       (cd "$WORKSPACE" && codex exec --json --skip-git-repo-check -C "$WORKSPACE" -s workspace-write "${extra[@]}" \
-        -c sandbox_workspace_write.network_access=true -c model_reasoning_effort=medium -o "$result" \
+        -c "sandbox_workspace_write.network_access=$net" -c model_reasoning_effort=medium -o "$result" \
         "$RULES (Your final message is written to the RESULT file for you.)
 Task:
 ${payload[*]}" </dev/null) >"$JOBS/$id.events.jsonl" 2>"$log"
@@ -98,5 +101,5 @@ PY
     done ;;
   status) cat "$JOBS/${2:?id}.json"; if [[ -f "$JOBS/$2.result.md" ]]; then echo "--- result"; cat "$JOBS/$2.result.md"; fi ;;
   log) tail -n "${3:-40}" "$JOBS/${2:?id}.log" ;;
-  *) echo "usage: being-job agent|codex|run <name> [--small] --notify <chatId> ... | list | status <id> | log <id> [n]" >&2; exit 2 ;;
+  *) echo "usage: being-job agent|codex|run <name> [--small] [--network] --notify <chatId> ... | list | status <id> | log <id> [n]" >&2; exit 2 ;;
 esac

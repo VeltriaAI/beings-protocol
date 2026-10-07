@@ -4,12 +4,14 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { connect, need, stateDir, standby, fail } from './graph.mjs';
+import { connect, need, stateDir, standby, fail, beingSender } from './graph.mjs';
+import { kitEnv, ownerDelegate } from './kit-env.mjs';
 import { logComms } from './comms-log.mjs';
 import { toHtml } from './fmt.mjs';
 import { findSecrets } from './secrets.mjs';
-import { chatLabel, fingerprint, renderPrompt } from './approval.mjs';
+import { chatLabel, fingerprint, renderPrompt, allocDraftId, COMMAND_RE } from './approval.mjs';
 
+const SENDER = beingSender();   // the prompt is posted as the Being, never as the owner
 const args = process.argv.slice(2);
 const opt = (f) => { const i = args.indexOf(f); return i === -1 ? '' : (args[i + 1] ?? ''); };
 const isMail = args.includes('--mail');
@@ -25,23 +27,26 @@ if (!text || (isMail ? !(to || replyTo) || (!subject && !replyTo) : !chatId)) {
 if (standby()) fail('standby host: drafts disabled', 3);
 const leaked = findSecrets(`${subject}\n${re}\n${text}`);
 if (leaked.length) fail(`blocked: draft looks like it contains secrets (${leaked.join(', ')}); not staged`, 3);
+// A draft that is itself a command ("send D8") would approve another draft once sent as the owner.
+if (COMMAND_RE.test(text)) fail('blocked: a draft cannot be an approval command; not staged', 3);
 const OWNER = need('OWNER_UPN').toLowerCase();
 
 // The target label comes from Graph with the owner's sign-in, never from the caller.
 let target = '';
-if (!isMail && !process.env.OWNER_CACHE) target = 'a chat not verified (no owner sign-in on this host: copy the text and send it yourself)';
+const kenv = kitEnv();
+if (!isMail && !ownerDelegate(kenv)) target = 'a chat not verified (no owner sign-in on this host: copy the text and send it yourself)';
 else if (!isMail) {
-  const { g: og, me: owner } = await connect({ upn: OWNER, cache: need('OWNER_CACHE'), scopes: ['Chat.ReadWrite', 'User.Read'] });
+  const { g: og, me: owner } = await connect({ upn: OWNER, cache: kenv.OWNER_CACHE, scopes: ['Chat.ReadWrite', 'User.Read'] });
   const chat = await og(`/chats/${encodeURIComponent(chatId)}?$expand=members`).catch((e) => fail(`cannot resolve chat ${chatId}: ${e.message}`));
+  if (chat.chatType === 'oneOnOne' && (chat.members || []).some((m) => (m.email || '').toLowerCase() === SENDER.upn.toLowerCase())) {
+    fail('blocked: drafts cannot target the owner\'s 1:1 with the Being', 3);
+  }
   target = chatLabel(chat, chat.members, { exclude: [owner.id, OWNER] });
 }
 
 const DIR = path.join(stateDir(), 'drafts');
 mkdirSync(DIR, { recursive: true, mode: 0o700 });
-const nf = path.join(DIR, 'next-id');
-const n = existsSync(nf) ? parseInt(readFileSync(nf, 'utf8'), 10) : 1;
-writeFileSync(nf, String(n + 1));
-const id = `D${n}`;
+const id = allocDraftId(DIR);
 const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 const draft = isMail ? { id, kind: 'mail', to: list(to), cc: list(cc), subject, replyTo, re, text, attach }
   : { id, kind: 'teams', chatId, target, re, text };
@@ -51,7 +56,7 @@ const store = (extra) => writeFileSync(file, JSON.stringify({ ...draft, status: 
 store({});
 
 // Posted in-process: the CLI sender refuses fingerprinted prompts, so only this script can offer a draft.
-const { g, me } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
+const { g, me } = await connect({ ...SENDER, sender: true, scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
 try {
   const cs = await g(`/me/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`);
   const chat = cs.value.find((c) => c.members?.some((m) => (m.email || '').toLowerCase() === OWNER));
