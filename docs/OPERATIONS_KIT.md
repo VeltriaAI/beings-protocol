@@ -67,8 +67,10 @@ cannot be skipped. Patterns that paid off:
   run per merge. Instead: create `batch-YYYY-MM-DD` from the shared branch each day; every job branches from it and merges
   into it; when the day's tasks are green, the Being (not a job) merges the batch once, waits for the single deploy,
   verifies all tasks, then cuts a fresh batch. Put the batch branch name in every job prompt.
-- **Send scopes in the sender, not the prompt.** Teammate runs carry `BEING_SEND_SCOPE=chats:<ids>`; the send script
-  refuses other targets. A prompt injection in a teammate's message cannot widen it.
+- **Send scopes in the sender, not the prompt.** The handler gives each run an opaque grant for its scope (teammates:
+  `chats:<ids>`); the send scripts look the scope up and refuse other targets, and no grant means owner-only. That stops
+  mistakes and an injection that edits its own environment. It does not stop an injected run that reads the token files on
+  a host where kit and model share one OS user; see the threat model in `skills/teams-kit/GUARDRAILS.md`.
 - **Pinned identity.** Every sender resolves the account by UPN and checks `/me` before posting; never "first account in cache".
 - **Watchdog over hope.** Jobs and runs that go idle produce one alert; jobs whose process vanished are marked died.
 - **Blocker after two failures.** Auth, permission, lock, quota, network, missing input: two failures → `being-blocker`

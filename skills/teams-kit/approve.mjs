@@ -1,37 +1,76 @@
 #!/usr/bin/env node
-// The only path that sends as the owner: applies the owner's typed decision on a stored draft, no model.
-// Usage and checks: README.md "Script reference" and GUARDRAILS.md.
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+// The only path that sends as the owner. Proceeds only when Graph shows the owner typed the command in their 1:1
+// and the prompt they saw carries the stored draft's fingerprint. Checks: GUARDRAILS.md "Sending as the owner".
+import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { connect, need, stateDir, fail } from './graph.mjs';
+import { connect, need, stateDir, fail, strip } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { toHtml } from './fmt.mjs';
+import { findSecrets } from './secrets.mjs';
+import { MAX_AGE_H, chatLabel, checkCommand, checkPrompt, parseCommand } from './approval.mjs';
 
-const MAX_AGE_H = 24;
-const [verb, id] = process.argv.slice(2);
-if (!['send', 'edit', 'skip', 'save'].includes(verb) || !/^D\d+$/.test(id || '')) fail('usage: approve.mjs send|edit|skip|save <Dn>', 2);
+const argv = process.argv.slice(2);
+const opt = (f) => { const i = argv.indexOf(f); return i === -1 ? '' : (argv[i + 1] ?? ''); };
+const [verb, id] = argv;
+const MSG = opt('--msg'), CHAT = opt('--chat');
+if (!['send', 'edit', 'skip', 'save'].includes(verb) || !/^D\d+$/.test(id || '') || (verb !== 'skip' && !(MSG && CHAT))) {
+  fail('usage: approve.mjs send|edit|skip|save <Dn> --chat <owner 1:1 chatId> --msg <owner command messageId>', 2);
+}
 const file = path.join(stateDir(), 'drafts', `${id}.json`);
+const USED = path.join(stateDir(), 'drafts', 'used-commands.txt');
 const here = path.dirname(fileURLToPath(import.meta.url));
-const tell = (msg) => spawnSync('node', [path.join(here, 'teams-send-dm.mjs'), '--verbatim'], { input: `<p>${msg}</p>`, stdio: ['pipe', 'ignore', 'inherit'] });
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const tell = (msg) => spawnSync('node', [path.join(here, 'teams-send-dm.mjs'), '--verbatim'], { input: `<p>${esc(msg)}</p>`, stdio: ['pipe', 'ignore', 'inherit'] });
 const stop = (msg) => { tell(msg); process.exit(1); };
 
 if (!existsSync(file)) stop(`I don't have a draft ${id}.`);
 const d = JSON.parse(readFileSync(file, 'utf8'));
 if (d.status !== 'pending') stop(`Draft ${id} is already ${d.status}.`);
 if (Date.now() - Date.parse(d.created) > MAX_AGE_H * 3600e3) stop(`Draft ${id} is older than ${MAX_AGE_H}h; ask me for a fresh one.`);
-const save = (status, extra = {}) => writeFileSync(file, JSON.stringify({ ...d, ...extra, status, decided: new Date().toISOString() }, null, 2));
+const save = (status, extra = {}) => writeFileSync(file, JSON.stringify({ ...d, ...extra, status, decided: new Date().toISOString() }, null, 2), { mode: 0o600 });
 if (verb === 'skip') { save('skipped'); logComms({ dir: 'draft', kind: 'skipped', draftId: id }); tell(`Skipped ${id}.`); process.exit(0); }
-const text = verb === 'edit' ? readFileSync(0, 'utf8').trim() : d.text;
-if (!text) stop(`Edit for ${id} was empty; nothing sent.`);
 const isMail = d.kind === 'mail';
 if (verb === 'save' && !isMail) stop(`${id} is a Teams draft; only email drafts can be saved to Outlook.`);
 
 const OWNER = need('OWNER_UPN');
-const { g } = await connect({ upn: OWNER, cache: need('OWNER_CACHE'),
-  scopes: isMail ? ['Mail.Send', 'Mail.ReadWrite', 'User.Read'] : ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
+if (!process.env.OWNER_CACHE) stop(`No owner sign-in on this host, so I cannot send ${id} as you; copy it from the prompt and send it yourself.`);
+const { g, me } = await connect({ upn: OWNER, cache: need('OWNER_CACHE'),
+  scopes: isMail ? ['Mail.Send', 'Mail.ReadWrite', 'Chat.ReadWrite', 'User.Read'] : ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
+if (me.id !== need('OWNER_OID')) stop(`Owner sign-in does not match OWNER_OID; nothing sent.`);
+
+// 1) The command must be the owner's own message, in their 1:1 with the Being, used once.
+const used = new Set(existsSync(USED) ? readFileSync(USED, 'utf8').split('\n').filter(Boolean) : []);
+let refusal, cmd, beingId;
+try {
+  const chat = await g(`/chats/${encodeURIComponent(CHAT)}?$expand=members`);
+  cmd = await g(`/chats/${encodeURIComponent(CHAT)}/messages/${encodeURIComponent(MSG)}`);
+  beingId = (chat.members || []).find((m) => (m.email || '').toLowerCase() === need('BEING_UPN').toLowerCase())?.userId;
+  refusal = checkCommand({ msg: cmd, chat, members: chat.members, ownerOid: me.id, beingUpn: need('BEING_UPN'), verb, id, draft: d, used });
+  // 2) The prompt the owner saw must be the Being's and carry this draft's fingerprint.
+  if (!refusal) {
+    const prompt = await g(`/chats/${encodeURIComponent(d.promptChatId)}/messages/${encodeURIComponent(d.promptMessageId)}`);
+    refusal = checkPrompt({ promptMsg: prompt, beingId, draft: d });
+  }
+  // 3) A Teams target must still resolve to the chat the prompt named.
+  if (!refusal && !isMail) {
+    const t = await g(`/chats/${encodeURIComponent(d.chatId)}?$expand=members`);
+    if (chatLabel(t, t.members, { exclude: [me.id, OWNER] }) !== d.target) refusal = 'the target chat no longer matches the prompt';
+  }
+} catch (e) { refusal = `could not verify (${e.message.slice(0, 100)})`; }
+if (refusal) {
+  logComms({ dir: 'draft', kind: 'approval-refused', draftId: id, error: refusal });
+  stop(`Did not act on ${id}: ${refusal}. Nothing went out.`);
+}
+appendFileSync(USED, `${MSG}\n`);
+
+const text = verb === 'edit' ? parseCommand(strip(cmd.body?.content)).rest : d.text;
+if (!text) stop(`Edit for ${id} was empty; nothing sent.`);
+const leaked = findSecrets(text);
+if (leaked.length) stop(`Edit for ${id} looks like it contains secrets (${leaked.join(', ')}); nothing sent.`);
+
 try {
   if (isMail) {
     const rcpt = (a) => ({ emailAddress: { address: a } });
@@ -65,8 +104,8 @@ try {
   } else {
     const sent = await g(`/chats/${d.chatId}/messages`, { body: { body: { contentType: 'html', content: toHtml(text) } } });
     save('sent', { sentText: text, sentMessageId: sent.id });
-    logComms({ dir: 'out', kind: 'as-owner', draftId: id, chatId: d.chatId, to: d.to, messageId: sent.id, text });
-    tell(`Sent ${id} as you.`);
+    logComms({ dir: 'out', kind: 'as-owner', draftId: id, chatId: d.chatId, to: d.target, messageId: sent.id, text });
+    tell(`Sent ${id} as you in ${d.target}.`);
   }
 } catch (e) {
   logComms({ dir: 'out', kind: 'as-owner-error', draftId: id, error: e.message });

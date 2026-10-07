@@ -127,7 +127,7 @@ sequenceDiagram
   X->>X: decide none / react / reply + needsWork + summary
   X-->>S: ack sent by the kit (emoji or short reply)
   X->>Q: needsWork items to work.jsonl
-  Q->>C: split by lane, run with that lane's send scope
+  Q->>C: split by lane, run with a fresh grant for that lane's scope
   C->>C: do the work (tools, repos, MCP) or start a being-job
   C->>Q: queue outgoing message to outbox
   C->>V: voice flush after every run
@@ -142,7 +142,8 @@ sequenceDiagram
 - **Never react to a question.** A 👍 on "can you…?" can read as a yes or a brush-off. Questions get no ack (the work step
   answers) or a short "on it" reply if the answer takes long.
 - Reactions vary by meaning (✅ approval, 🎉 done, 🙏 thanks, 👀 a file to look at), not a default 👍.
-- One reply per chat even if several messages arrive together; no holding reply if the real answer follows right away.
+- One triage call per chat, and one reply per chat even if several messages arrive together; no holding reply if the
+  real answer follows right away. Replies that quote `.env` values or credentials are dropped by the kit.
 - **Status questions** ("is X ready?") are answered at once from a live `being-status` snapshot, even while the work
   session is busy. Only the owner gets the full picture; others hear only about their own request.
 - No "automated" wording, no promises of dates, prices or commitments, no internal details to non-owners.
@@ -150,10 +151,11 @@ sequenceDiagram
   so the sender knows it arrived, and the message goes to work anyway.
 
 **Owner commands bypass every model.** `send Dn`, `edit Dn …`, `skip Dn` and `save Dn`, typed by the owner in their 1:1
-with the Being, are parsed by a plain script and applied by `approve.mjs`.
+with the Being, are parsed by a plain script and applied by `approve.mjs`, which re-reads the command and the
+fingerprinted approval prompt from Graph with the owner's sign-in before anything goes out.
 
 **2. Work** (Claude Code, the day's work session). Messages that need work are split into **lanes**, and each lane runs as
-a **separate** call with its own send scope. The session reads the ack already sent and the triage summary, does the work
+a **separate** call with its own send grant. The session reads the ack already sent and the triage summary, does the work
 (answers, lookups, PR reviews, fixes) and replies in the chat. Anything longer than a few minutes is handed to `being-job`
 and the person is told it is underway. One work run at a time (`flock`), so runs never interleave inside the daily session.
 
@@ -232,7 +234,7 @@ flowchart TB
   DL --> RUN
   JL --> RUN
   RUN --> SEND["teams-send-dm.mjs"]
-  SEND --> CHK{"Target allowed by BEING_SEND_SCOPE?"}
+  SEND --> CHK{"Target allowed by the run's grant?"}
   CHK -->|yes| OK["Sent as the Being"]
   CHK -->|no| BLK["Blocked, exit 3"]
 ```
@@ -339,11 +341,13 @@ never replies to its own messages, never auto-replies to mail, and puts nothing 
 | Guard | How |
 |---|---|
 | Right identity | Sign-in refuses any other account; every send resolves `/me` and aborts if it is not the Being |
-| Send scope | `BEING_SEND_SCOPE` = `owner-only` or `chats:<ids>`; other targets, new chats and mail exit 3 |
+| Send scope | Per-run grant minted by the handler (`full`, `owner-only` or `chats:<ids>`); no grant = owner-only; other targets, new chats and mail exit 3 |
+| Secret filter | Senders refuse text quoting `.env` values, `.env` lines, tokens or keys |
 | Separate runs per lane | The owner's messages and everyone else's never share a model call |
-| Owner data isolation | Read-only views of the owner's chats and mail refuse to run in a teammate scope |
+| Owner data isolation | Read-only views of the owner's chats and mail need an owner-lane grant |
 | Jobs inherit scope | A job started from a teammate request reports only where it came from |
-| Sending as the owner | Only `approve.mjs`: no model, owner-typed command in their 1:1, pending drafts under 24 h, identity re-checked, logged |
+| Sending as the owner | Only `approve.mjs`: no model; the owner's typed command and the fingerprinted prompt are re-read from Graph; drafts under 24 h; logged |
+| Limits | Same OS user for kit and model stops mistakes, not a determined injection with shell access; see the threat model in the Teams `GUARDRAILS.md` |
 
 ```mermaid
 sequenceDiagram

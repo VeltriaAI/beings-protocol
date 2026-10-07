@@ -9,6 +9,9 @@ const { g, me } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.Read', 
 const SELF = me.id;
 const OWNER = process.env.OWNER_OID || '';
 const NAME_RE = new RegExp(`\\b${need('BEING_NAME').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+// Sweep limits (README "Detection limits"): most recently active chats first, newest messages per chat.
+const int = (k, d, max) => Math.min(max, Math.max(1, parseInt(process.env[k] || '', 10) || d));
+const MAX_CHATS = int('BEING_DETECT_CHATS', 50, 1000), PER_CHAT = int('BEING_DETECT_MESSAGES', 8, 50);
 const EMO = { like: '👍', heart: '❤️', laugh: '😆', surprised: '😮', sad: '😢', angry: '😡' };
 
 const members = new Map();   // chatId -> Map(userId -> displayName)
@@ -23,14 +26,22 @@ async function nameOf(id, chatId) {
 }
 
 try {
-  // One watermark covers every chat, so every tick sweeps every chat.
-  const chats = (await g('/me/chats?$top=50&$select=id,topic,chatType')).value ?? [];
+  // One watermark covers every chat, so every tick sweeps every chat (up to MAX_CHATS, paged).
+  const base = '/me/chats?$top=50&$select=id,topic,chatType';
+  let r = await g(`${base}&$orderby=lastMessagePreview/createdDateTime desc`).catch(() => g(base));   // unordered if $orderby is refused
+  const chats = [...(r.value ?? [])];
+  while (r['@odata.nextLink'] && chats.length < MAX_CHATS) { r = await g(r['@odata.nextLink']); chats.push(...(r.value ?? [])); }
+  chats.splice(MAX_CHATS);
   const hits = [];
   let transient = false;
   // Graph has no createdDateTime filter for chat messages: fetch the newest few and compare locally.
   await Promise.all(chats.map(async (c) => {
     try {
-      for (const m of (await g(`/chats/${c.id}/messages?$top=8`)).value ?? []) {
+      const page = (await g(`/chats/${c.id}/messages?$top=${PER_CHAT}`)).value ?? [];
+      if (page.length === PER_CHAT && page.every((m) => (m.createdDateTime || '') > since)) {
+        console.error(`chat ${c.id.slice(0, 30)}: ${PER_CHAT}+ new messages since the last sweep; older ones may be missed (raise BEING_DETECT_MESSAGES)`);
+      }
+      for (const m of page) {
         // Reactions to the Being's own messages count as input (a 👍 on a question is an answer).
         if (m.from?.user?.id === SELF && !m.deletedDateTime) {
           for (const r of m.reactions ?? []) {

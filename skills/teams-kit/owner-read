@@ -3,10 +3,11 @@
 #   owner-read --find <name> | --list [--top N] | --chat <chatId> [--top N] | <upn>
 set -euo pipefail
 KIT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-[[ "${BEING_SEND_SCOPE:-}" == chats:* ]] && { echo "blocked: teammate runs cannot read the owner's chats" >&2; exit 3; }
 set -a
 # shellcheck source=/dev/null
 . "$KIT/.env"
 set +a
+# Allowed only under a full or owner-only grant from the handler (an operator can mint one with scope.mjs).
+node "$KIT/scope.mjs" owner-read-ok || { echo "blocked: only owner-lane runs may read the owner's chats" >&2; exit 3; }
 [[ -s "${OWNER_CACHE:-}" ]] || { echo "no owner delegate sign-in (OWNER_CACHE)" >&2; exit 1; }
 BEING_CACHE="$OWNER_CACHE" exec node "$KIT/teams-read.mjs" --as "$OWNER_UPN" "$@"

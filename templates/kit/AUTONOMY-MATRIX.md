@@ -6,11 +6,11 @@
 | Action | Owner's 1:1 | Teammate (1:1 or mention) | Background job | Enforced by |
 |---|---|---|---|---|
 | Acknowledge (react / short reply) | auto | auto | — | triage, `teams-ack.mjs` |
-| Answer, look up, review, build | yes | yes, reply in the same chat only | yes | `BEING_SEND_SCOPE=chats:<id>` |
+| Answer, look up, review, build | yes | yes, reply in the same chat only | yes | per-run send grant `chats:<id>` |
 | Message someone new / another chat | yes | **ask owner** | no | send scope (exit 3) |
 | Email from the Being's mailbox | yes | **ask owner** | no | send scope (owner only) |
-| Read the owner's chats / mail | yes (read-only) | **never** | only if started from the owner lane | `owner-read`, `owner-mail` refuse `chats:` scopes |
-| Send as the owner | draft → owner types `send Dn` | never | never | `approve.mjs` only, no model in the path |
+| Read the owner's chats / mail | yes (read-only) | **never** | only if started from the owner lane | `owner-read`, `owner-mail` need an owner-lane grant |
+| Send as the owner | draft → owner types `send Dn` | never | never | `approve.mjs` only, re-checked in Graph |
 | Merge / approve / close PRs, deploy, push shared branches | propose → owner approves | **ask owner** | only if the task says so | AUTONOMY.md |
 | Cancel CI runs | no | no | no | CI guard wrapper |
 | Commitments on dates, money, scope | never | never | never | prompt rules + review |

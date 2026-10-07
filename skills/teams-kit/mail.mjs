@@ -5,6 +5,8 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'no
 import path from 'node:path';
 import { connect, need, fail, strip, standby } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
+import { currentScope } from './scope.mjs';
+import { findSecrets } from './secrets.mjs';
 
 const args = process.argv.slice(2);
 const opt = (f) => { const i = args.indexOf(f); return i === -1 ? null : (args[i + 1] ?? ''); };
@@ -50,14 +52,17 @@ try {
     const list = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
     const to = list(opt('--to')), cc = list(opt('--cc')), subject = opt('--subject') || '';
     if (!to.length || !subject) fail('--send needs --to and --subject', 2);
-    // Scoped runs may only mail the owner.
+    // Only a full-scope grant may mail anyone but the owner.
     const owner = (process.env.OWNER_UPN || '').toLowerCase();
-    if (process.env.BEING_SEND_SCOPE && [...to, ...cc].some((x) => x.toLowerCase() !== owner)) fail('blocked: scoped run may only mail the owner', 3);
+    const { scope } = currentScope();
+    if (scope !== 'full' && [...to, ...cc].some((x) => x.toLowerCase() !== owner)) fail(`blocked: ${scope.split(':')[0]} scope may only mail the owner`, 3);
     const files = list(opt('--attach'));
     for (const f of files) if (!existsSync(f) || statSync(f).size >= 3 * 1024 * 1024) fail(`attachment missing or >= 3 MB: ${f}`, 2);
     const attachments = files.map((f) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: path.basename(f), contentBytes: readFileSync(f).toString('base64') }));
     const rcpt = (a) => ({ emailAddress: { address: a } });
     const content = readFileSync(0, 'utf8');
+    const leaked = findSecrets(`${subject}\n${content}`);
+    if (leaked.length) fail(`blocked: message looks like it contains secrets (${leaked.join(', ')}); nothing sent`, 3);
     await g('/me/sendMail', { body: { message: { subject, body: { contentType: 'html', content }, toRecipients: to.map(rcpt), ccRecipients: cc.map(rcpt),
       ...(attachments.length && { attachments }) }, saveToSentItems: true } });
     logComms({ channel: 'mail', dir: 'out', to, cc, subject, text: strip(content) + (files.length ? ` [attached: ${files.map((f) => path.basename(f)).join(', ')}]` : '') });

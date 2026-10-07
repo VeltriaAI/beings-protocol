@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Stage a draft written on the owner's behalf and send it to the owner for approval (approve.mjs sends).
-// Usage: README.md "Script reference".
+// Stage a draft written on the owner's behalf and post its approval prompt to the owner (approve.mjs sends).
+// Usage: README.md "Script reference". The prompt shows the target as resolved from Graph, plus a fingerprint.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { stateDir, fail } from './graph.mjs';
+import { connect, need, stateDir, standby, fail } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { toHtml } from './fmt.mjs';
+import { findSecrets } from './secrets.mjs';
+import { chatLabel, fingerprint, renderPrompt } from './approval.mjs';
 
 const args = process.argv.slice(2);
 const opt = (f) => { const i = args.indexOf(f); return i === -1 ? '' : (args[i + 1] ?? ''); };
@@ -20,30 +20,44 @@ const attach = opt('--attach').split(',').map((x) => x.trim()).filter(Boolean).m
 });
 const text = readFileSync(0, 'utf8').trim();
 if (!text || (isMail ? !(to || replyTo) || (!subject && !replyTo) : !chatId)) {
-  fail('usage: --chat <chatId> --to <label> [--re <msg>] < draft.md | --mail --to a,b [--cc c] --subject S [--reply-to <id>] [--attach /abs/f] < draft.md', 2);
+  fail('usage: --chat <chatId> [--re <msg>] < draft.md | --mail --to a,b [--cc c] --subject S [--reply-to <id>] [--attach /abs/f] < draft.md', 2);
+}
+if (standby()) fail('standby host: drafts disabled', 3);
+const leaked = findSecrets(`${subject}\n${re}\n${text}`);
+if (leaked.length) fail(`blocked: draft looks like it contains secrets (${leaked.join(', ')}); not staged`, 3);
+const OWNER = need('OWNER_UPN').toLowerCase();
+
+// The target label comes from Graph with the owner's sign-in, never from the caller.
+let target = '';
+if (!isMail && !process.env.OWNER_CACHE) target = 'a chat not verified (no owner sign-in on this host: copy the text and send it yourself)';
+else if (!isMail) {
+  const { g: og, me: owner } = await connect({ upn: OWNER, cache: need('OWNER_CACHE'), scopes: ['Chat.ReadWrite', 'User.Read'] });
+  const chat = await og(`/chats/${encodeURIComponent(chatId)}?$expand=members`).catch((e) => fail(`cannot resolve chat ${chatId}: ${e.message}`));
+  target = chatLabel(chat, chat.members, { exclude: [owner.id, OWNER] });
 }
 
 const DIR = path.join(stateDir(), 'drafts');
-mkdirSync(DIR, { recursive: true });
+mkdirSync(DIR, { recursive: true, mode: 0o700 });
 const nf = path.join(DIR, 'next-id');
 const n = existsSync(nf) ? parseInt(readFileSync(nf, 'utf8'), 10) : 1;
 writeFileSync(nf, String(n + 1));
 const id = `D${n}`;
 const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 const draft = isMail ? { id, kind: 'mail', to: list(to), cc: list(cc), subject, replyTo, re, text, attach }
-  : { id, kind: 'teams', chatId, to: to || 'them', re, text };
-writeFileSync(path.join(DIR, `${id}.json`), JSON.stringify({ ...draft, status: 'pending', created: new Date().toISOString() }, null, 2));
+  : { id, kind: 'teams', chatId, target, re, text };
+draft.fingerprint = fingerprint(draft);
+const file = path.join(DIR, `${id}.json`);
+const store = (extra) => writeFileSync(file, JSON.stringify({ ...draft, status: 'pending', created: new Date().toISOString(), ...extra }, null, 2), { mode: 0o600 });
+store({});
 
-const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const head = isMail
-  ? `<p><b>Draft ${id}</b>: email as you${replyTo ? ' (reply in thread)' : ''} to <b>${esc(draft.to.join(', ') || 'the original sender')}</b>`
-    + (draft.cc.length ? ` cc ${esc(draft.cc.join(', '))}` : '') + '</p>' + (subject ? `<p><i>Subject:</i> ${esc(subject)}</p>` : '')
-    + (attach.length ? `<p><i>Attachments:</i> ${esc(attach.map((a) => `${a.name} (${Math.round(a.size / 1024)} KB)`).join(', '))}</p>` : '')
-  : `<p><b>Draft ${id}</b>: reply as you to <b>${esc(draft.to)}</b></p>`;
-const html = head + (re ? `<p><i>They wrote:</i> “${esc(re.slice(0, 300))}”</p>` : '') + '<hr>' + toHtml(text) + '<hr>'
-  + `<p>Reply <b>send ${id}</b> · <b>edit ${id} &lt;new text&gt;</b> · <b>skip ${id}</b>${isMail ? ` · <b>save ${id}</b>` : ''}</p>`;
-const here = path.dirname(fileURLToPath(import.meta.url));
-const r = spawnSync('node', [path.join(here, 'teams-send-dm.mjs'), '--verbatim'], { input: html, stdio: ['pipe', 'inherit', 'inherit'] });
-if (r.status !== 0) fail(`draft ${id} stored but not delivered to the owner`);
-logComms({ channel: isMail ? 'mail' : 'teams', dir: 'draft', kind: 'for-owner', draftId: id, chatId, to: draft.to, subject, text });
+// Posted in-process: the CLI sender refuses fingerprinted prompts, so only this script can offer a draft.
+const { g, me } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.ReadWrite', 'ChatMessage.Send', 'User.Read'] });
+try {
+  const cs = await g(`/me/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`);
+  const chat = cs.value.find((c) => c.members?.some((m) => (m.email || '').toLowerCase() === OWNER));
+  if (!chat) throw new Error('no 1:1 chat with the owner yet; send them any message first');
+  const sent = await g(`/chats/${chat.id}/messages`, { body: { body: { contentType: 'html', content: renderPrompt(draft, toHtml(text)) } } });
+  store({ promptChatId: chat.id, promptMessageId: sent.id, promptAt: sent.createdDateTime || new Date().toISOString(), by: me.userPrincipalName });
+} catch (e) { fail(`draft ${id} stored but not delivered to the owner: ${e.message}`); }
+logComms({ channel: isMail ? 'mail' : 'teams', dir: 'draft', kind: 'for-owner', draftId: id, chatId, to: isMail ? draft.to : target, subject, text });
 console.log(id);

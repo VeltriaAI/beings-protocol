@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # being-teams: presence + Teams watcher (→ being-handle) + mail watcher + watchdog, as one host process.
-#   up | down | restart | status | logs [n] | handler [n] | inbox [n] | autostart on|off|status
+#   up | down | restart | status | doctor | logs [n] | handler [n] | inbox [n] | autostart on|off|status
 set -euo pipefail
 
 KIT="${BEING_KIT_HOME:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}"
@@ -14,7 +14,7 @@ TICK="${BEING_TICK_SEC:-30}"; PRESENCE_EVERY=$(( 300 / TICK > 0 ? 300 / TICK : 1
 COMMS="${BEING_COMMS_LOG:-$STATE/comms.jsonl}"
 mkdir -p "$STATE"
 # A standby host (copy waiting for cutover) only offers read-only views.
-[[ -e "$STATE/STANDBY" && ! "${1:-status}" =~ ^(status|logs|inbox|handler)$ ]] && { echo "standby host: ${1:-} refused" >&2; exit 3; }
+[[ -e "$STATE/STANDBY" && ! "${1:-status}" =~ ^(status|doctor|logs|inbox|handler)$ ]] && { echo "standby host: ${1:-} refused" >&2; exit 3; }
 
 alive() { [[ -f "$PIDF" ]] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 UNIT="${BEING_NAME}-teams.service"; UNITF="$HOME/.config/systemd/user/$UNIT"
@@ -77,6 +77,7 @@ loop() {
       (( mrc == 0 || mrc == 10 )) && echo "$start" >"$MWM"
     fi
     (( n % 4 == 0 )) && { python3 "$KIT/being-watchdog" 2>>"$LOG" || echo "$(date -Is) watchdog failed" >>"$LOG"; }
+    (( n % 120 == 0 )) && { node scope.mjs prune >/dev/null 2>>"$LOG" || true; }
     n=$((n + 1)); sleep "$TICK"
   done
 }
@@ -121,6 +122,28 @@ case "${1:-status}" in
     alive && echo "loop: up (pid $(cat "$PIDF"))" || echo "loop: down"
     echo "watermark: teams $(cat "$WM" 2>/dev/null || echo none) · mail $(cat "$MWM" 2>/dev/null || echo none)"
     (cd "$KIT" && echo "presence: $(node teams-presence.mjs status 2>/dev/null || echo unknown)") ;;
+  doctor)   # how far the guarantees in GUARDRAILS.md "Threat model" hold on this host
+    python3 - "$KIT" "$STATE" "${BEING_CACHE:-}" "${OWNER_CACHE:-}" "${BEING_MODEL_USER:-}" <<'PY' ;;
+import os,sys,stat,pwd
+kit,state,bc,oc,model=sys.argv[1:6]; me=pwd.getpwuid(os.getuid()).pw_name; bad=0
+def mode(p): return stat.S_IMODE(os.stat(p).st_mode)
+for label,p in (("kit .env",os.path.join(kit,".env")),("Being token cache",bc),("owner token cache",oc)):
+    if not p or not os.path.exists(p): print(f"  -  {label}: not present"); continue
+    ok=mode(p)&0o077==0; bad+=not ok
+    print(f"  {'ok' if ok else '!!'} {label}: mode {oct(mode(p))}{'' if ok else ' (chmod 600)'}")
+if not model or model==me:
+    print(f"  !! isolation: model runs as {me}, the same user that holds .env and the token caches.")
+    print("     Send scopes and owner approvals stop mistakes, not a prompt-injected model (GUARDRAILS.md, Threat model).")
+    sys.exit(1)
+uid=pwd.getpwnam(model).pw_uid
+for p in (kit,os.path.join(kit,".env"),state,os.path.join(state,"grants"),bc,oc):
+    if not p or not os.path.exists(p): continue
+    st=os.stat(p); m=stat.S_IMODE(st.st_mode)
+    if st.st_uid==uid or m&0o002 or (os.path.isfile(p) and m&0o044) or (p!=kit and m&0o055 and os.path.isdir(p)):
+        bad+=1; print(f"  !! {p}: reachable by {model} (owner uid {st.st_uid}, mode {oct(m)})")
+print(f"  {'ok' if not bad else '!!'} isolation: kit files held by {me} are out of {model}'s reach (running models as {model} is host setup)")
+sys.exit(1 if bad else 0)
+PY
   logs) tail -n "${2:-40}" "$LOG" ;;
   handler) tail -n "${2:-40}" "$STATE/handler.log" ;;
   inbox) tail -n "${2:-20}" "$COMMS" 2>/dev/null | python3 -c 'import json,sys
@@ -138,5 +161,5 @@ for l in sys.stdin:
       *) echo "usage: being-teams autostart on|off|status"; exit 2 ;;
     esac ;;
   __loop) loop ;;
-  *) echo "usage: being-teams up|down|restart|status|logs [n]|handler [n]|inbox [n]|autostart on|off|status"; exit 2 ;;
+  *) echo "usage: being-teams up|down|restart|status|doctor|logs [n]|handler [n]|inbox [n]|autostart on|off|status"; exit 2 ;;
 esac

@@ -225,7 +225,7 @@ Everything a Being needs once it works with a team:
 
 ```bash
 scripts/being-kit.sh birth nova --owner "Sam" --teams   # new Being with the kit, in minutes
-scripts/being-kit.sh upgrade ~/beings/atlas             # add the kit to an existing Being (never overwrites)
+scripts/being-kit.sh upgrade ~/beings/nova              # add the kit to an existing Being (never overwrites)
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how it fits together, with diagrams),

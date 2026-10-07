@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # being-job: long work that must outlive a handler reply; on finish it wakes the daily session to verify.
-# Usage: README.md "Script reference". A job inherits the caller's BEING_SEND_SCOPE.
+# Usage: README.md "Script reference". A job inherits the caller's send grant scope (scope.mjs).
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"   # cron/systemd start with a bare PATH
 KIT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -17,7 +17,8 @@ json_get() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get
 start_job() {   # $1 kind, $2 name, $3 notify chat, $4 model, rest = payload
   local kind=$1 name=$2 notify=$3 model=$4; shift 4
   local id; id="$(date +%m%d-%H%M%S)-$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '-' | cut -c1-24)"
-  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "${BEING_SEND_SCOPE:-}" "${BEING_JOB_ADD_DIRS:-}" "$model" "$BEING_NAME" "$@" <<'PY'
+  local scope; scope=$(node "$KIT/scope.mjs" show)
+  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "$scope" "${BEING_JOB_ADD_DIRS:-}" "$model" "$BEING_NAME" "$@" <<'PY'
 import json,sys,datetime,uuid
 f,id_,kind,name,notify,scope,add_dirs,model,being,*payload=sys.argv[1:]
 sid=str(uuid.uuid5(uuid.NAMESPACE_URL,f"being-job/{being}/{id_}")) if kind=="agent" else ""
@@ -51,7 +52,7 @@ case "${1:-list}" in
     start_job "$kind" "$name" "$notify" "$model" "$@" ;;
   __exec)
     id=$2; jf="$JOBS/$id.json"; log="$JOBS/$id.log"; result="$JOBS/$id.result.md"
-    export BEING_SEND_SCOPE; BEING_SEND_SCOPE=$(json_get "$jf" scope)
+    export BEING_SEND_TOKEN; BEING_SEND_TOKEN=$(node "$KIT/scope.mjs" mint "$(json_get "$jf" scope)" 48)
     export BEING_VOICE=fast
     kind=$(json_get "$jf" kind)
     mapfile -t payload < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["payload"]))' "$jf")
@@ -74,6 +75,7 @@ ${payload[*]}" </dev/null) >"$JOBS/$id.events.jsonl" 2>"$log"
       (cd "$WORKSPACE" && "${payload[@]}") >"$log" 2>&1
     fi
     rc=$?; set -e
+    printf '%s' "$BEING_SEND_TOKEN" | node "$KIT/scope.mjs" revoke; unset BEING_SEND_TOKEN
     # Verify: a model job that exits 0 without a result file is not "done".
     status="done"; (( rc != 0 )) && status="failed"
     [[ $kind != run && $status == "done" && ! -s "$result" ]] && status=no-result

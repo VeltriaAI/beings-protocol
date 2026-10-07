@@ -8,6 +8,9 @@ import { connect, need, fail, standby, stateDir } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { replyRef, autoReplyTarget } from './reply-ref.mjs';
 import { ensureHtml } from './fmt.mjs';
+import { currentScope, allowedChats } from './scope.mjs';
+import { findSecrets } from './secrets.mjs';
+import { PROMPT_MARK_RE } from './approval.mjs';
 
 const args = process.argv.slice(2);
 const take = (f) => { const i = args.indexOf(f); if (i === -1) return null; const v = args[i + 1] || ''; args.splice(i, 2); if (!v) fail(`${f} needs a value`, 2); return v; };
@@ -23,9 +26,10 @@ const { g, me, tokenFor } = await connect({ upn: need('BEING_UPN'), scopes: ['Ch
 console.error(`sending as ${me.userPrincipalName} → ${CHAT_ID ? `chat ${CHAT_ID}` : RECIPIENT}`);
 if (WHOAMI) { console.log(`verified sender: ${me.userPrincipalName}`); process.exit(0); }
 
-const SCOPE = process.env.BEING_SEND_SCOPE || '';
-const ALLOWED = SCOPE.startsWith('chats:') ? SCOPE.slice(6).split(',').filter(Boolean) : [];
-if (SCOPE && !CHAT_ID && RECIPIENT !== OWNER) fail(`blocked: ${SCOPE.split(':')[0]} scope (recipient ${RECIPIENT})`, 3);
+// Scope comes from the handler's grant (BEING_SEND_TOKEN), never from a plain env var; no grant means owner-only.
+const { scope: SCOPE } = currentScope();
+const LIMITED = SCOPE !== 'full', ALLOWED = allowedChats(SCOPE);
+if (LIMITED && !CHAT_ID && RECIPIENT !== OWNER) fail(`blocked: ${SCOPE.split(':')[0]} scope (recipient ${RECIPIENT})`, 3);
 
 let chat;
 try {
@@ -39,9 +43,10 @@ try {
       'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${upn}')` })) } });
   }
   // Scoped runs may post only to their listed chats or to the owner's 1:1 with the Being.
-  if (SCOPE && !ALLOWED.includes(chat.id)) {
+  if (LIMITED && !ALLOWED.includes(chat.id)) {
     const members = (await g(`/chats/${chat.id}/members`)).value || [];
-    const ownerDm = chat.chatType === 'oneOnOne' && members.some((x) => (x.email || '').toLowerCase() === OWNER);
+    const ownerDm = chat.chatType === 'oneOnOne' && members.some((x) => (x.email || '').toLowerCase() === OWNER)
+      && members.some((x) => x.userId === me.id);
     if (!ownerDm) fail(`blocked: ${SCOPE.split(':')[0]} scope (target ${chat.id})`, 3);
   }
 } catch (e) { fail(`cannot resolve chat: ${e.message}`); }
@@ -49,6 +54,10 @@ try {
 let content = readFileSync(0, 'utf8');
 if (!content.trim() && !ATTACH_URL) fail('empty message body on stdin; nothing sent', 2);
 if (content.trim()) content = ensureHtml(content);
+// Approval prompts come only from draft-for-owner.mjs; nothing that reads like .env or a credential goes out.
+if (PROMPT_MARK_RE.test(content.replace(/<[^>]+>/g, ' '))) fail('blocked: only draft-for-owner.mjs may post draft approval prompts', 3);
+const leaked = findSecrets(content);
+if (leaked.length) fail(`blocked: message looks like it contains secrets (${leaked.join(', ')}); nothing sent`, 3);
 const payload = { body: { contentType: 'html', content } };
 if (ATTACH_URL) {
   // Teams resolves a file card by the item's eTag GUID and its WebDAV URL.

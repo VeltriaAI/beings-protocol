@@ -7,6 +7,7 @@ import { connect, need, stateDir, standby, fail } from './graph.mjs';
 import { logComms } from './comms-log.mjs';
 import { replyRef } from './reply-ref.mjs';
 import { toHtml } from './fmt.mjs';
+import { findSecrets } from './secrets.mjs';
 
 if (standby()) fail('standby host: acknowledgements disabled', 3);
 const ACKED = path.join(stateDir(), 'acked-ids.txt');
@@ -28,6 +29,11 @@ for (const m of todo) {
     messageId: m.messageId, text: m.text ?? m.preview, attachments: m.attachments });
   const d = byMsg.get(m.messageId) || { action: m.chatType === 'oneOnOne' ? 'react' : 'none', fallback: true };
   if (d.action === 'react' && NO_REACT.has(m.fromId)) Object.assign(d, { action: 'reply', text: d.text?.trim() || 'Got it, thanks.' });
+  const leaked = d.action === 'reply' ? findSecrets(d.text) : [];
+  if (leaked.length) {   // a triage reply that quotes .env or a credential is dropped; the work run still answers
+    logComms({ dir: 'ack', kind: 'blocked-secret', chatId: m.chatId, messageId: m.messageId, error: leaked.join(', ') });
+    Object.assign(d, { action: 'none', text: '' });
+  }
   try {
     if (d.action === 'react') {
       await g(`/chats/${m.chatId}/messages/${m.messageId}/setReaction`, { body: { reactionType: EMOJI.has(d.emoji) ? d.emoji : '👍' } });

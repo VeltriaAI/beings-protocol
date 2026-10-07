@@ -13,9 +13,7 @@ export const stateDir = () => need('BEING_STATE_DIR');
 // A standby host (a copy waiting for cutover) may read but never send.
 export const standby = () => existsSync(path.join(stateDir(), 'STANDBY'));
 
-export const strip = (h) => (h || '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<br\s*\/?>|<\/p>/gi, '\n')
-  .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-  .replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
+export { strip } from './strip.mjs';
 
 export function msal(cache) {
   return new PublicClientApplication({

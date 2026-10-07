@@ -21,8 +21,8 @@ Then: `nova` → the first conversation fills `SOUL.md`, `IDENTITY.md` and `USER
 ## Upgrade an existing Being (for example a peer Being)
 
 ```bash
-scripts/being-kit.sh check   ~/beings/atlas            # what is present / missing
-scripts/being-kit.sh upgrade ~/beings/atlas --teams    # add only what is missing
+scripts/being-kit.sh check   ~/beings/nova             # what is present / missing
+scripts/being-kit.sh upgrade ~/beings/nova --teams     # add only what is missing
 ```
 
 `upgrade` never overwrites: identity, memory, soul and existing scripts stay as they are. A single-client `bin/<name>`

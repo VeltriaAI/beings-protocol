@@ -3,11 +3,12 @@
 #   owner-mail --list [--top N] [--unread] | --search <text> | --read <id> | --attachments <id> [--save <dir>]
 set -euo pipefail
 KIT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-[[ "${BEING_SEND_SCOPE:-}" == chats:* ]] && { echo "blocked: teammate runs cannot read the owner's mail" >&2; exit 3; }
 for a in "$@"; do [[ "$a" == --send || "$a" == --detect ]] && { echo "owner-mail is read-only; stage a draft with draft-for-owner.mjs --mail" >&2; exit 2; }; done
 set -a
 # shellcheck source=/dev/null
 . "$KIT/.env"
 set +a
+# Allowed only under a full or owner-only grant from the handler (an operator can mint one with scope.mjs).
+node "$KIT/scope.mjs" owner-read-ok || { echo "blocked: only owner-lane runs may read the owner's mail" >&2; exit 3; }
 [[ -s "${OWNER_CACHE:-}" ]] || { echo "no owner delegate sign-in (OWNER_CACHE)" >&2; exit 1; }
 BEING_CACHE="$OWNER_CACHE" BEING_UPN="$OWNER_UPN" BEING_READ_ONLY=1 BEING_COMMS_LOG=/dev/null exec node "$KIT/mail.mjs" "$@"

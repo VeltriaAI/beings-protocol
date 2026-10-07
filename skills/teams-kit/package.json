@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test fmt.test.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "@azure/msal-node": "^2"

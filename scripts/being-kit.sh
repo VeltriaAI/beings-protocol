@@ -11,12 +11,17 @@ say()  { printf '  \033[0;32m✓\033[0m %s\n' "$1"; }
 skip() { printf '  \033[2m- %s\033[0m\n' "$1"; }
 die()  { printf '  \033[0;31m✗\033[0m %s\n' "$1" >&2; exit "${2:-1}"; }
 
+# sed_lit <text>: escape for the replacement side of s/…/…/ (backslash, slash, ampersand).
+sed_lit() { printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'; }
+# shq <text>: single-quote for a shell-sourced file such as .env.
+shq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+
 # add <src> <dest>: copy only if dest is missing; fill {{BEING_NAME}} / {{OWNER_NAME}}.
 add() {
   local src=$1 dest=$2
   if [[ -e "$dest" ]]; then skip "kept existing ${dest#"$HOME_DIR"/}"; return; fi
   mkdir -p "$(dirname "$dest")"
-  sed -e "s/{{BEING_NAME}}/$NAME/g" -e "s/{{OWNER_NAME}}/${OWNER//\//\\/}/g" "$src" >"$dest"
+  sed -e "s/{{BEING_NAME}}/$(sed_lit "$NAME")/g" -e "s/{{OWNER_NAME}}/$(sed_lit "$OWNER")/g" "$src" >"$dest"
   [[ -x "$src" ]] && chmod +x "$dest"
   say "added ${dest#"$HOME_DIR"/}"
 }
@@ -42,11 +47,16 @@ install_teams() {
   mkdir -p "$dst"
   (cd "$REPO/skills/teams-kit" && tar --exclude=node_modules --exclude=state --exclude=.env -cf - .) | (cd "$dst" && tar -xf -)
   mkdir -p "$dst/state"
-  sed -e "s|^BEING_NAME=.*|BEING_NAME=$NAME|" \
-      -e "s|^BEING_STATE_DIR=.*|BEING_STATE_DIR=$dst/state|" \
-      -e "s|^BEING_CACHE=.*|BEING_CACHE=$dst/state/token-cache.json|" \
-      -e "s|^OWNER_NAME=.*|OWNER_NAME=$OWNER|" "$dst/.env.example" >"$dst/.env"
+  # Values are single-quoted: the file is sourced by bash (set -a; . .env), so spaces and quotes must survive.
+  BK_NAME=$(shq "$NAME") BK_STATE=$(shq "$dst/state") BK_CACHE=$(shq "$dst/state/token-cache.json") BK_OWNER=$(shq "$OWNER") \
+  awk '/^BEING_NAME=/      { print "BEING_NAME=" ENVIRON["BK_NAME"]; next }
+       /^BEING_STATE_DIR=/ { print "BEING_STATE_DIR=" ENVIRON["BK_STATE"]; next }
+       /^BEING_CACHE=/     { print "BEING_CACHE=" ENVIRON["BK_CACHE"]; next }
+       /^OWNER_NAME=/      { print "OWNER_NAME=" ENVIRON["BK_OWNER"]; next }
+       { print }' "$dst/.env.example" >"$dst/.env"
   chmod 600 "$dst/.env"
+  # shellcheck source=/dev/null
+  (set -a; . "$dst/.env") >/dev/null 2>&1 || die "generated $dst/.env does not source cleanly"
   say "added ops/teams-kit (fill ops/teams-kit/.env, then see its README)"
   ignore_once "ops/teams-kit/.env"
   ignore_once "ops/teams-kit/state/"
@@ -103,6 +113,7 @@ EOF
 }
 
 cmd="${1:-}"; shift || true
+check_owner() { [[ "$OWNER" != *$'\n'* ]] || die "--owner must be one line" 2; }
 OWNER="your partner"; TEAMS=false; NO_MEMORY=""; FRESH=false
 case "$cmd" in
   birth)
@@ -112,6 +123,7 @@ case "$cmd" in
       shift
     done
     [[ "$NAME" =~ ^[a-z][a-z0-9-]*$ ]] || die "name must be lowercase letters, digits or dashes" 2
+    check_owner
     HOME_DIR="$HOME/beings/$NAME"
     bash "$REPO/install.sh" --global --name "$NAME" --yes ${NO_MEMORY:+"$NO_MEMORY"}
     FRESH=true; upgrade
@@ -123,6 +135,7 @@ case "$cmd" in
       case "$1" in --owner) OWNER="${2:?}"; shift ;; --teams) TEAMS=true ;; *) die "unknown option $1" 2 ;; esac
       shift
     done
+    check_owner
     if [[ $cmd == upgrade ]]; then upgrade; else check; fi ;;
   *) usage; exit 2 ;;
 esac
