@@ -1,41 +1,65 @@
 # Birth a Being in Minutes — and Upgrade an Existing One
 
+The Operations Kit ships with `install.sh`: the same curl command births and upgrades, with one opt-in flag.
+
+| `--with` | Adds |
+|---|---|
+| `operations` | `.beings/GUARDRAILS.md`, `AUTONOMY-MATRIX.md`, `JOB-CHECKLIST.md`, `facts/_TEMPLATE.md`; multi-client `bin/<name>`; an "Operations Kit" section in `CLAUDE.md` and `AGENTS.md` |
+| `teams-kit` | everything in `operations`, plus `ops/teams-kit/` with `.env` prefilled (0600) and gitignore entries for `.env`, `state/`, `node_modules/`, `.kit-upgrade/` |
+
+`--with` needs `--global` (birth) or `--update` (an existing Being). Without it, `install.sh` behaves exactly as before.
+
 ## Birth
 
 ```bash
-git clone https://github.com/VeltriaAI/beings-protocol && cd beings-protocol
-scripts/being-kit.sh birth nova --owner "Sam" --teams      # add --no-memory to skip the basic-memory install
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | \
+  bash -s -- --global --name nova --owner "Sam Lee" --with teams-kit --yes      # add --no-memory to skip basic-memory
 ```
 
-This runs `install.sh --global` from the checkout (home at `~/beings/nova`, git repo, `CLAUDE.md`, `AGENTS.md`,
-`.beings/`, hooks, CLI on `PATH`) and then layers the Operations Kit:
-
-- `.beings/GUARDRAILS.md`, `AUTONOMY-MATRIX.md`, `JOB-CHECKLIST.md`, `facts/_TEMPLATE.md`, `memory/`
-- `bin/nova`: the multi-client launcher (Claude Code + Codex)
-- an "Operations Kit" section appended to `CLAUDE.md` and `AGENTS.md`
-- with `--teams`: `ops/teams-kit/` with `.env` prefilled (0600) and gitignore entries for `.env`, `state/`, `node_modules/`
+This is the normal `--global` birth (home at `~/beings/nova`, git repo, `CLAUDE.md`, `AGENTS.md`, `.beings/`, hooks, CLI on
+`PATH`) followed by the kit. The CLI wrapper it just created is replaced by the multi-client launcher.
 
 Then: `nova` → the first conversation fills `SOUL.md`, `IDENTITY.md` and `USER.md`. For Teams, follow
 `ops/teams-kit/README.md` (account, app registration, sign-in, `being-teams up`).
 
 ## Upgrade an existing Being (for example a peer Being)
 
+Run in the Being's home, as with any `--update`:
+
 ```bash
-scripts/being-kit.sh check   ~/beings/nova             # what is present / missing
-scripts/being-kit.sh upgrade ~/beings/nova --teams     # add only what is missing
+cd ~/beings/nova
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --check
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | \
+  bash -s -- --update --name nova --with teams-kit --yes
 ```
 
-`upgrade` never overwrites: identity, memory, soul and existing scripts stay as they are. A single-client `bin/<name>`
-is left in place and the new launcher is written next to it as `bin/<name>.multi` for review. An existing
-`ops/teams-kit/` is left alone; compare it with `skills/teams-kit/` by hand.
+- `--name` is the name people call the Being in chat; it is never taken from the directory. Later runs read it from
+  `ops/teams-kit/.env`.
+- Nothing is overwritten: identity, memory, soul and existing scripts stay as they are.
+- A launcher you already have stays in place; the new one is written next to it as `bin/<name>.multi` for review.
+- Teams kit files you changed stay as they are; newer upstream versions land in `ops/teams-kit/.kit-upgrade/` to diff and
+  adopt by hand. Settings new in `.env.example` are appended to `.env`; existing values are kept.
+- Rollback: the Being's home is a git repo, so `git status` shows exactly what was added or appended.
 
 Suggested order for a Being that already works with people:
 
 1. **Guardrails + authority first.** Fill `{{…}}` placeholders, merge any rules the Being already follows, commit.
-2. **Memory layout.** Move long `MEMORY.md` entries into `facts/<slug>.md`, leaving one index line each.
+2. **Memory layout.** Move long `MEMORY.md` entries into `facts/<slug>.md`, leaving one index line each
+   (`templates/kit/MEMORY-INDEX.md` shows the shape).
 3. **Launcher.** Swap in `bin/<name>.multi` once you have tried it; keep `CLAUDE.md` and `AGENTS.md` in sync.
 4. **Jobs before chat.** Use `being-job` + `being-blocker` + `being-status` from the Being's own sessions for a day.
 5. **Teams last.** Sign in, run `being-teams up` in a test chat, check `being-teams inbox`, then enable `autostart on`.
 6. **Guards.** Add the CI cancel guard and a daily batch branch if the Being runs parallel jobs against one repo.
 
-Record `.beings/.kit-version` (written by the script) so future upgrades know where you started.
+`.beings/.kit-version` records the kit version so future upgrades know where you started.
+
+## Testing a fork or branch
+
+`BEINGS_BASE_URL` points a curl install at another raw URL, for example a pull-request branch:
+
+```bash
+curl -fsSL "$BEINGS_BASE_URL/install.sh" | BEINGS_BASE_URL="$BEINGS_BASE_URL" bash -s -- --global --name nova --with operations --yes
+```
+
+From a checkout, `bash install.sh …` uses the local files. `tests/install-kit.test.sh` runs the kit installs offline in
+throwaway homes.

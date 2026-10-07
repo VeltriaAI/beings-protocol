@@ -7,12 +7,12 @@ behalf of people.
 
 | Piece | Where | Installed by |
 |---|---|---|
-| Guardrails template | `templates/kit/GUARDRAILS.md` → `.beings/GUARDRAILS.md` | `scripts/being-kit.sh` |
-| Authority matrix (lanes, scopes) | `templates/kit/AUTONOMY-MATRIX.md` → `.beings/` | `scripts/being-kit.sh` |
-| Job-prompt checklist | `templates/kit/JOB-CHECKLIST.md` → `.beings/` | `scripts/being-kit.sh` |
-| One-fact memory files + index | `templates/kit/facts/`, `templates/kit/MEMORY-INDEX.md` | `scripts/being-kit.sh` (facts dir) |
-| Multi-client launcher | `templates/kit/bin/being` → `bin/<name>` | `scripts/being-kit.sh` |
-| Teams/M365 pipeline | `skills/teams-kit/` → `ops/teams-kit/` | `scripts/being-kit.sh --teams` |
+| Guardrails template | `templates/kit/GUARDRAILS.md` → `.beings/GUARDRAILS.md` | `install.sh --with operations` |
+| Authority matrix (lanes, scopes) | `templates/kit/AUTONOMY-MATRIX.md` → `.beings/` | `install.sh --with operations` |
+| Job-prompt checklist | `templates/kit/JOB-CHECKLIST.md` → `.beings/` | `install.sh --with operations` |
+| One-fact memory files + index | `templates/kit/facts/`, `templates/kit/MEMORY-INDEX.md` | `install.sh --with operations` (facts dir) |
+| Multi-client launcher | `templates/kit/bin/being` → `bin/<name>` | `install.sh --with operations` |
+| Teams/M365 pipeline | `skills/teams-kit/` → `ops/teams-kit/` | `install.sh --with teams-kit` |
 | CI cancel guard | `templates/kit/guards/ci-cancel-guard.sh` | by hand (see below) |
 | Model routing | [MODEL_ROUTING.md](MODEL_ROUTING.md) | `.env` |
 | Birth / upgrade | [BIRTH_AND_UPGRADE.md](BIRTH_AND_UPGRADE.md) | — |

@@ -36,8 +36,8 @@ without reloading it for every message. `bin/<name> claude today` / `codex today
 1. **Accounts.** A licensed M365 user for the Being, and an Entra app registration: public client, "Allow public client
    flows" on, delegated permissions `Chat.ReadWrite ChatMessage.Send Chat.Create User.Read Presence.ReadWrite Mail.ReadWrite
    Mail.Send Files.ReadWrite`. Some tenants require admin consent; ask your tenant admin.
-2. **Install.** `npm install`, then copy `.env.example` to `.env` (`chmod 600`) and fill it. `scripts/being-kit.sh --teams`
-   prefills the paths and names.
+2. **Install.** `npm install`, then copy `.env.example` to `.env` (`chmod 600`) and fill it. `install.sh --with teams-kit`
+   does the copy and prefills the paths and names.
 3. **Sign in as the Being** (device code; refuses any other account):
    `set -a; . ./.env; set +a; node teams-login-device.mjs --upn "$BEING_UPN" --cache "$BEING_CACHE"`
 4. **Owner ids.** `OWNER_UPN` and `OWNER_OID` (the owner's object id; visible in the Entra portal).

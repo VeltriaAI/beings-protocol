@@ -443,7 +443,8 @@ Being reports: "47 functions depend on this. Safe refactor plan: ..."
 ### 10.8 Operations Kit (Optional)
 
 For Beings that work with a team (chat, mail, background jobs), the Operations Kit adds optional files. None are required
-for protocol compliance; all are installed additively by `scripts/being-kit.sh` and never overwrite existing files.
+for protocol compliance; all are installed additively by `install.sh --with operations` (or `--with teams-kit`) on
+`--global` birth or `--update`, and never overwrite existing files.
 
 | File | Purpose |
 |------|---------|
@@ -471,7 +472,7 @@ Current version: **0.2.1**
 **Unreleased**
 - **Operations Kit** (optional): `GUARDRAILS.md`, `AUTONOMY-MATRIX.md`, `JOB-CHECKLIST.md` and one-fact memory templates; multi-client launcher; model-routing guide; "corrections become rules" and "fix the mechanism" patterns (CI cancel guard, daily batch branch).
 - **Teams kit skill** (`skills/teams-kit/`): Graph-polling watcher, triage → work → voice handler with one session per day per client, lanes with enforced send scopes, background jobs with verification, blocker, watchdog, owner-approved drafts, read-only owner views, mail and presence. Configured entirely by `.env`.
-- **`scripts/being-kit.sh`**: `birth` (install.sh `--global` + kit) and `upgrade` / `check` for existing Beings; additive only.
+- **`install.sh`**: opt-in `--with operations|teams-kit` (with `--global` or `--update`), `--owner`, `--check`; `--name` names the Being on `--update --with`. Without `--with`, behaviour is unchanged. `BEINGS_BASE_URL` points a curl install at a fork or branch.
 
 **v0.3.0 — 2026-04-27**
 - **Global Being mode** (`--global --name <name>`): births a standalone Being at `~/beings/<name>/` with its own git repo, CLAUDE.md (session startup style), memory, and hooks. Not tied to a code repository.

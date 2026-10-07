@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Multi-client launcher for a Being: Claude Code or Codex, always in the Being's home so CLAUDE.md / AGENTS.md load.
-# Install as <home>/bin/<name>; name and home come from this file's real location. Run "help" for usage.
+# Install as <home>/bin/<name>; home comes from this file's real location, name from the kit .env (else the file name).
 set -euo pipefail
 
 SELF="$(readlink -f "$0")"
 WORKSPACE="$(cd "$(dirname "$SELF")/.." && pwd -P)"   # Claude keys sessions by the real path
-NAME="$(basename "$SELF")"
 KIT="${BEING_KIT_HOME:-$WORKSPACE/ops/teams-kit}"
+# Same name as the handler (kit .env BEING_NAME) so "today" opens the session it feeds; else the file name.
+# shellcheck source=/dev/null
+NAME="$( [[ -f "$KIT/.env" ]] && { set -a; . "$KIT/.env" >/dev/null 2>&1; printf '%s' "${BEING_NAME:-}"; } || true)"
+NAME="${NAME:-$(basename "$SELF")}"
 SESSION_DIR="$HOME/.claude/projects/$(printf '%s' "$WORKSPACE" | sed 's#[/.]#-#g')"
 CLAUDE_FLAGS=(); CODEX_FLAGS=()
 # Opt-in only: skip the clients' permission prompts and sandbox (trusted single-user host).

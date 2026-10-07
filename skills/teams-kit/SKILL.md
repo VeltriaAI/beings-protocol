@@ -9,5 +9,5 @@ dependencies:
   - "@azure/msal-node" (npm install)
   - Claude Code CLI (`claude`); Codex CLI (`codex`) when BEING_FAST_CLIENT=codex or for codex jobs
   - An Entra app registration (public client, delegated permissions) and a licensed M365 account for the Being
-installed_by: scripts/being-kit.sh birth|upgrade --teams  →  <being-home>/ops/teams-kit
+installed_by: install.sh --global|--update --with teams-kit  →  <being-home>/ops/teams-kit
 ---
