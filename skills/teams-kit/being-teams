@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# being-teams: presence + Teams watcher (→ being-handle) + mail watcher + watchdog, as one host process.
+#   up | down | restart | status | logs [n] | handler [n] | inbox [n] | autostart on|off|status
+set -euo pipefail
+
+KIT="${BEING_KIT_HOME:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}"
+set -a
+# shellcheck source=/dev/null
+. "$KIT/.env"
+set +a
+STATE="${BEING_STATE_DIR:?set BEING_STATE_DIR in .env}"
+PIDF="$STATE/loop.pid"; LOG="$STATE/loop.log"; WM="$STATE/watermark"; MWM="$STATE/mail-watermark"; OWM="$STATE/owner-watermark"
+TICK="${BEING_TICK_SEC:-30}"; PRESENCE_EVERY=$(( 300 / TICK > 0 ? 300 / TICK : 1 ))   # presence every ~5 min, expiry 15 min
+COMMS="${BEING_COMMS_LOG:-$STATE/comms.jsonl}"
+mkdir -p "$STATE"
+# A standby host (copy waiting for cutover) only offers read-only views.
+[[ -e "$STATE/STANDBY" && ! "${1:-status}" =~ ^(status|logs|inbox|handler)$ ]] && { echo "standby host: ${1:-} refused" >&2; exit 3; }
+
+alive() { [[ -f "$PIDF" ]] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+UNIT="${BEING_NAME}-teams.service"; UNITF="$HOME/.config/systemd/user/$UNIT"
+via_systemd() { [[ -z "${BEING_TEAMS_SYSTEMD:-}" ]] && systemctl --user is-enabled -q "$UNIT" 2>/dev/null; }
+
+# Queue each new message once (dedup by id), tagging the lane; $1 seen-key prefix, $2 lane ("" or owner), $3 self id to drop.
+enqueue() {
+  python3 -c '
+import json,sys,os
+seen_f,q_f,prefix,lane,skip=sys.argv[1:6]
+seen=set(open(seen_f).read().split()) if os.path.exists(seen_f) else set()
+with open(q_f,"a") as q, open(seen_f,"a") as sf:
+    for m in json.load(sys.stdin)["messages"]:
+        if lane and (skip in m["chatId"] or m.get("fromId")==skip or m.get("addressedBy")=="reaction"): continue
+        k=prefix+(m.get("messageId") or m["chatId"]+"@"+m["at"])
+        if k in seen: continue
+        if lane: m["lane"]=lane
+        q.write(json.dumps(m)+"\n"); sf.write(k+"\n"); seen.add(k)' "$STATE/queued-ids.txt" "$STATE/queue.jsonl" "$1" "$2" "$3"
+}
+
+loop() {
+  cd "$KIT"
+  [[ -s "$WM" ]] || date -u +%FT%TZ >"$WM"
+  [[ -s "$MWM" ]] || date -u +%FT%TZ >"$MWM"
+  local n=0 start out rc oout orc mrc
+  while :; do
+    # Open today's fast (Codex) session ahead of the first message.
+    if [[ "${BEING_FAST_CLIENT:-codex}" == codex && ! -s "$STATE/fast-daily/$(date +%F).id" ]] && (( n % 20 == 0 )); then
+      setsid "$KIT/being-handle" warm </dev/null >/dev/null 2>&1 &
+    fi
+    if (( n % PRESENCE_EVERY == 0 )); then
+      node teams-presence.mjs available >/dev/null 2>>"$LOG" || echo "$(date -Is) presence refresh failed" >>"$LOG"
+    fi
+    start=$(date -u +%FT%TZ)
+    set +e; out=$(node teams-detect.mjs "$(cat "$WM")" 2>>"$LOG"); rc=$?; set -e
+    if (( rc == 10 || rc == 11 )); then
+      printf '%s\n' "$out" | enqueue "" "" ""
+      echo "$(date -Is) new message(s) queued" >>"$LOG"
+      setsid "$KIT/being-handle" triage </dev/null >/dev/null 2>&1 &
+      (( rc == 10 )) && rc=0
+    fi
+    (( rc == 0 )) && echo "$start" >"$WM"
+    # Delegate lane: messages to the owner (outside the owner's chat with the Being) are logged for drafts on request.
+    if [[ -s "${OWNER_CACHE:-}" && -n "${OWNER_OID:-}" ]]; then
+      [[ -s "$OWM" ]] || echo "$start" >"$OWM"
+      set +e; oout=$(BEING_CACHE="$OWNER_CACHE" BEING_UPN="$OWNER_UPN" BEING_NAME="${OWNER_NAME:-owner}" \
+        node teams-detect.mjs "$(cat "$OWM")" 2>>"$LOG"); orc=$?; set -e
+      if (( orc == 10 || orc == 11 )); then
+        local self; self=$(cat "$STATE/being-oid" 2>/dev/null || echo "-")
+        printf '%s\n' "$oout" | enqueue "o:" owner "$self"
+        setsid "$KIT/being-handle" triage </dev/null >/dev/null 2>&1 &
+        (( orc == 10 )) && orc=0
+      fi
+      (( orc == 0 )) && echo "$start" >"$OWM"
+    fi
+    # Mail is logged and notified, never auto-answered.
+    if [[ "${BEING_MAIL_WATCH:-1}" == 1 ]]; then
+      set +e; node mail.mjs --detect "$(cat "$MWM")" >/dev/null 2>>"$LOG"; mrc=$?; set -e
+      if (( mrc == 10 )) && command -v notify-send >/dev/null; then notify-send "$BEING_NAME · Mail" "New mail" || true; fi
+      (( mrc == 0 || mrc == 10 )) && echo "$start" >"$MWM"
+    fi
+    (( n % 4 == 0 )) && { python3 "$KIT/being-watchdog" 2>>"$LOG" || echo "$(date -Is) watchdog failed" >>"$LOG"; }
+    n=$((n + 1)); sleep "$TICK"
+  done
+}
+
+write_unit() {
+  mkdir -p "$(dirname "$UNITF")"
+  cat >"$UNITF" <<UNIT
+[Unit]
+Description=$BEING_NAME Teams presence + message watcher
+StartLimitIntervalSec=0
+
+[Service]
+Type=forking
+Environment=BEING_TEAMS_SYSTEMD=1
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=$KIT/being-teams up
+ExecStop=$KIT/being-teams down
+PIDFile=$PIDF
+KillMode=process
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+UNIT
+}
+
+case "${1:-status}" in
+  up)
+    if via_systemd; then systemctl --user start "$UNIT"; echo "up (systemd)"; exit 0; fi
+    alive && { echo "already up (pid $(cat "$PIDF"))"; exit 0; }
+    # Remember the Being's own object id so the delegate lane can drop the owner's chat with the Being.
+    (cd "$KIT" && node teams-read.mjs --whoami 2>/dev/null | awk '{print $3}' >"$STATE/being-oid") || true
+    setsid "$0" __loop >>"$LOG" 2>&1 </dev/null & echo $! >"$PIDF"
+    sleep 2; if alive; then echo "up (pid $(cat "$PIDF"))"; else echo "failed to start; see $LOG"; exit 1; fi ;;
+  down)
+    if via_systemd; then systemctl --user stop "$UNIT"; echo down; exit 0; fi
+    if alive; then kill -- -"$(cat "$PIDF")" 2>/dev/null || kill "$(cat "$PIDF")"; fi
+    rm -f "$PIDF"; (cd "$KIT" && node teams-presence.mjs offline) || true; echo down ;;
+  restart) "$0" down; "$0" up ;;
+  status)
+    alive && echo "loop: up (pid $(cat "$PIDF"))" || echo "loop: down"
+    echo "watermark: teams $(cat "$WM" 2>/dev/null || echo none) · mail $(cat "$MWM" 2>/dev/null || echo none)"
+    (cd "$KIT" && echo "presence: $(node teams-presence.mjs status 2>/dev/null || echo unknown)") ;;
+  logs) tail -n "${2:-40}" "$LOG" ;;
+  handler) tail -n "${2:-40}" "$STATE/handler.log" ;;
+  inbox) tail -n "${2:-20}" "$COMMS" 2>/dev/null | python3 -c 'import json,sys
+for l in sys.stdin:
+    m=json.loads(l); who=m.get("from") or m.get("to") or ""
+    body=(m.get("subject","")+" — " if m.get("subject") else "")+(m.get("text") or m.get("error") or "")
+    print(m["loggedAt"][:19], m.get("channel","teams").ljust(5), m["dir"].ljust(5), m.get("kind","msg").ljust(9), who, "|", str(body)[:120])' ;;
+  autostart)
+    case "${2:-status}" in
+      on)  write_unit; systemctl --user daemon-reload; systemctl --user enable "$UNIT" >/dev/null
+           if alive && ! systemctl --user is-active -q "$UNIT"; then BEING_TEAMS_SYSTEMD=1 "$0" down >/dev/null; fi
+           systemctl --user start "$UNIT"; "$0" autostart status ;;
+      off) systemctl --user disable "$UNIT" >/dev/null 2>&1 || true; echo "autostart off (loop left as is)" ;;
+      status) echo "unit: $(systemctl --user is-enabled "$UNIT" 2>/dev/null || echo not-installed) / $(systemctl --user is-active "$UNIT" 2>/dev/null || true)" ;;
+      *) echo "usage: being-teams autostart on|off|status"; exit 2 ;;
+    esac ;;
+  __loop) loop ;;
+  *) echo "usage: being-teams up|down|restart|status|logs [n]|handler [n]|inbox [n]|autostart on|off|status"; exit 2 ;;
+esac

@@ -440,6 +440,23 @@ Being runs: axon_impact validate_user
 Being reports: "47 functions depend on this. Safe refactor plan: ..."
 ```
 
+### 10.8 Operations Kit (Optional)
+
+For Beings that work with a team (chat, mail, background jobs), the Operations Kit adds optional files. None are required
+for protocol compliance; all are installed additively by `scripts/being-kit.sh` and never overwrite existing files.
+
+| File | Purpose |
+|------|---------|
+| `.beings/GUARDRAILS.md` | Non-negotiable rules that override every other instruction |
+| `.beings/AUTONOMY-MATRIX.md` | Who can trigger which action, through which path, and how it is enforced (lanes, send scopes) |
+| `.beings/JOB-CHECKLIST.md` | What a self-contained background-job prompt must include |
+| `.beings/facts/<slug>.md` | One fact per file, indexed one line each in `MEMORY.md` |
+| `.beings/.kit-version` | Operations Kit version tracking |
+| `bin/<name>` | Multi-client launcher (Claude Code + Codex) |
+| `ops/teams-kit/` | Microsoft Teams + Outlook pipeline (`skills/teams-kit/`) |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [OPERATIONS_KIT.md](OPERATIONS_KIT.md), [MODEL_ROUTING.md](MODEL_ROUTING.md) and [BIRTH_AND_UPGRADE.md](BIRTH_AND_UPGRADE.md).
+
 ## 11. Versioning
 
 This specification follows semantic versioning:
@@ -450,6 +467,11 @@ This specification follows semantic versioning:
 Current version: **0.2.1**
 
 ### Changelog
+
+**Unreleased**
+- **Operations Kit** (optional): `GUARDRAILS.md`, `AUTONOMY-MATRIX.md`, `JOB-CHECKLIST.md` and one-fact memory templates; multi-client launcher; model-routing guide; "corrections become rules" and "fix the mechanism" patterns (CI cancel guard, daily batch branch).
+- **Teams kit skill** (`skills/teams-kit/`): Graph-polling watcher, triage → work → voice handler with one session per day per client, lanes with enforced send scopes, background jobs with verification, blocker, watchdog, owner-approved drafts, read-only owner views, mail and presence. Configured entirely by `.env`.
+- **`scripts/being-kit.sh`**: `birth` (install.sh `--global` + kit) and `upgrade` / `check` for existing Beings; additive only.
 
 **v0.3.0 — 2026-04-27**
 - **Global Being mode** (`--global --name <name>`): births a standalone Being at `~/beings/<name>/` with its own git repo, CLAUDE.md (session startup style), memory, and hooks. Not tied to a code repository.

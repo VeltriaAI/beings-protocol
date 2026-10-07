@@ -1,0 +1,11 @@
+{
+  "name": "beings-teams-kit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test fmt.test.mjs"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2"
+  }
+}

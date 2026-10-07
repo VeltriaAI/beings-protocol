@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Multi-client launcher for a Being: Claude Code or Codex, always in the Being's home so CLAUDE.md / AGENTS.md load.
+# Install as <home>/bin/<name>; name and home come from this file's real location. Run "help" for usage.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+WORKSPACE="$(cd "$(dirname "$SELF")/.." && pwd -P)"   # Claude keys sessions by the real path
+NAME="$(basename "$SELF")"
+KIT="${BEING_KIT_HOME:-$WORKSPACE/ops/teams-kit}"
+SESSION_DIR="$HOME/.claude/projects/$(printf '%s' "$WORKSPACE" | sed 's#[/.]#-#g')"
+CLAUDE_FLAGS=(); CODEX_FLAGS=()
+# Opt-in only: skip the clients' permission prompts and sandbox (trusted single-user host).
+if [[ "${BEING_SKIP_PERMISSIONS:-0}" == 1 ]]; then
+  CLAUDE_FLAGS=(--dangerously-skip-permissions); CODEX_FLAGS=(--dangerously-bypass-approvals-and-sandbox)
+fi
+cd "$WORKSPACE"
+
+usage() {
+  cat <<EOF
+$NAME                        client picker
+$NAME claude [prompt|flags]  Claude Code (new sessions are named YYYY-MM-DD)
+$NAME claude continue | resume [#|id] | sessions [N] | today
+$NAME codex  [prompt|flags]  Codex
+$NAME codex  continue | resume [id] | today
+"today" opens the daily session the Teams kit feeds (work session for Claude, triage session for Codex).
+BEING_SKIP_PERMISSIONS=1 skips the clients' permission prompts and sandbox (off by default).
+EOF
+}
+
+sessions() {   # newest first, sub-agent transcripts skipped
+  { find "$SESSION_DIR" -maxdepth 1 -name '*.jsonl' ! -name 'agent-*' -printf '%T@ %f\n' 2>/dev/null || true; } | sort -rn | cut -d' ' -f2 | sed 's/\.jsonl$//'
+}
+
+list_sessions() {
+  local i=1 sid f first
+  printf '  %-4s %-38s %s\n' '#' 'session' 'first message'
+  while read -r sid; do
+    (( i > ${1:-10} )) && break
+    f="$SESSION_DIR/$sid.jsonl"
+    first=$(grep -m1 '"role":"user"' "$f" 2>/dev/null | sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | cut -c1-60 || true)
+    printf '  %-4s %-38s %s\n' "$i" "$sid" "${first:-(complex message)}"
+    i=$((i + 1))
+  done < <(sessions)
+}
+
+daily_sid() { python3 -c 'import uuid,sys; print(uuid.uuid5(uuid.NAMESPACE_URL, sys.argv[1]))' "being-daily/$NAME/$(date +%F)"; }
+
+has_name_flag() {
+  local a; for a in "$@"; do
+    case "$a" in -n|--name|--name=*|-r|--resume|--resume=*|-c|--continue|--session-id|--session-id=*) return 0 ;; esac
+  done; return 1
+}
+
+launch_claude() {
+  case "${1:-}" in
+    today|t) shift; local sid; sid=$(daily_sid)
+      if [[ -f "$SESSION_DIR/$sid.jsonl" ]]; then exec claude "${CLAUDE_FLAGS[@]}" --resume "$sid" "$@"; fi
+      exec claude "${CLAUDE_FLAGS[@]}" --name "$(date +%F)" --session-id "$sid" "$@" ;;
+    sessions|ls) list_sessions "${2:-10}" ;;
+    continue|c) shift; exec claude "${CLAUDE_FLAGS[@]}" --continue "$@" ;;
+    resume|r) shift
+      if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+        local sid; sid=$(sessions | sed -n "${1}p"); shift
+        [[ -n "$sid" ]] || { echo "no session at that number; try: $NAME claude sessions" >&2; exit 1; }
+        exec claude "${CLAUDE_FLAGS[@]}" --resume "$sid" "$@"
+      fi
+      exec claude "${CLAUDE_FLAGS[@]}" --resume "$@" ;;
+    *) if has_name_flag "$@"; then exec claude "${CLAUDE_FLAGS[@]}" "$@"; fi
+       exec claude "${CLAUDE_FLAGS[@]}" --name "$(date +%F)" "$@" ;;
+  esac
+}
+
+launch_codex() {
+  case "${1:-}" in
+    today|t) shift; local idf; idf="$KIT/state/fast-daily/$(date +%F).id"
+      [[ -s "$idf" ]] || { echo "no Codex triage session today yet (it opens with the first message)" >&2; exit 1; }
+      exec codex "${CODEX_FLAGS[@]}" resume "$(cat "$idf")" "$@" ;;
+    continue|c) shift; exec codex "${CODEX_FLAGS[@]}" resume --last "$@" ;;
+    resume|r) shift; exec codex "${CODEX_FLAGS[@]}" resume "$@" ;;
+    *) exec codex "${CODEX_FLAGS[@]}" "$@" ;;
+  esac
+}
+
+case "${1:-}" in
+  claude) shift; launch_claude "$@" ;;
+  codex) shift; launch_codex "$@" ;;
+  help|-h|--help) usage ;;
+  "")
+    if [[ -t 0 && -t 1 ]]; then
+      read -r -p "Client for $NAME: 1) Claude Code  2) Codex  [1]: " c
+      case "${c:-1}" in 1|claude) launch_claude ;; 2|codex) launch_codex ;; *) echo "invalid choice" >&2; exit 2 ;; esac
+    else usage; exit 2; fi ;;
+  *) launch_claude "$@" ;;   # no client word: Claude Code, like the single-client wrapper
+esac
