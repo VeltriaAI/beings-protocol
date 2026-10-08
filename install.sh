@@ -17,6 +17,15 @@
 #   # Update non-interactively (auto-installs basic-memory, skips Axon)
 #   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --yes
 #
+#   # Birth a Global Being with the Operations Kit and the Teams kit (opt-in)
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global --name nova --owner "Sam Lee" --with teams-kit --yes
+#
+#   # Add the kit to an existing Being (run in its home; never overwrites)
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --name nova --with teams-kit --yes
+#
+#   # Report which protocol and kit pieces a Being home has (changes nothing)
+#   curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --check
+#
 # Flags:
 #   --global    Birth a standalone Being at ~/beings/<name>/ with its own home,
 #               git repo, CLAUDE.md, memory, and hooks. Not tied to a code repo.
@@ -28,6 +37,12 @@
 #               install. Required when running via curl|bash (no TTY for prompts).
 #   --no-memory Skip installing basic-memory. By default basic-memory (and uv,
 #               if missing) is installed. Use only for air-gapped/restricted envs.
+#   --with <c>  Opt-in components, comma-separated: operations (guardrails, authority
+#               matrix, job checklist, facts/, multi-client launcher) and teams-kit
+#               (ops/teams-kit/, implies operations). Needs --global or --update.
+#   --owner <n> Owner (human partner) name for kit templates and the Teams .env.
+#   --check     Report which protocol and kit pieces exist here. Changes nothing.
+#   With --update --with, --name is the Being's name (not taken from the directory).
 # ============================================================
 
 set -euo pipefail
@@ -38,6 +53,9 @@ GLOBAL_MODE=false
 BEING_NAME=""
 YES_MODE=false
 NO_MEMORY_MODE=false
+CHECK_MODE=false
+WITH_COMPONENTS=""
+OWNER_NAME="your partner"
 
 # Colors
 GREEN='\033[0;32m'
@@ -52,7 +70,7 @@ LEAF="🌿"
 CHECK="✓"
 ARROW="→"
 
-BASE_URL="https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main"
+BASE_URL="${BEINGS_BASE_URL:-https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main}"   # override to test a fork or branch
 
 # Resolve the directory of this script (empty if piped from curl)
 SCRIPT_DIR=""
@@ -1059,6 +1077,255 @@ EOF
 }
 
 # ============================================================
+# Operations Kit (opt-in: --with operations,teams-kit)
+# Additive only: missing files are added, existing ones are never overwritten.
+# ============================================================
+KIT_VERSION="0.1.0"
+KIT_TEMPLATES=(GUARDRAILS.md AUTONOMY-MATRIX.md JOB-CHECKLIST.md facts/_TEMPLATE.md)
+# Listed explicitly so a curl install can fetch them; tests/install-kit.test.sh keeps these in sync with git.
+TEAMS_KIT_FILES=(
+  .env.example .gitignore GUARDRAILS.md README.md SKILL.md ack-schema.json approval.mjs approval.test.mjs
+  comms-log.mjs fmt.mjs fmt.test.mjs graph.mjs kit-env.mjs kit-env.test.mjs package.json reply-ref.mjs scope.mjs scope.test.mjs secrets.mjs
+  secrets.test.mjs strip.mjs voice-schema.json
+)
+TEAMS_KIT_EXEC=(
+  approve.mjs being-blocker being-handle being-job being-status being-teams being-watchdog draft-for-owner.mjs
+  mail.mjs owner-mail owner-read teams-ack.mjs teams-detect.mjs teams-login-device.mjs teams-presence.mjs
+  teams-read.mjs teams-send-dm.mjs
+)
+KIT_ADDED=0
+KIT_KEPT=0
+
+kit_wants() { [[ ",$WITH_COMPONENTS," == *",$1,"* ]]; }
+
+# Escape for the replacement side of s/…/…/, and single-quote for a bash-sourced .env.
+# sed, not ${var//\'/…}: bash 3.2 (macOS) handles quotes in that replacement differently.
+sed_lit() { printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'; }
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# Fetch a repo file (not only templates/) from this checkout or from BASE_URL.
+fetch_or_copy_file() {
+  local rel_path="$1"
+  local dest="$2"
+  if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/templates" ]; then
+    cp "$SCRIPT_DIR/$rel_path" "$dest"
+  else
+    curl -fsSL "$BASE_URL/$rel_path" -o "$dest"
+  fi
+}
+
+# Validate --with / --name / --owner before anything is written.
+kit_validate() {
+  local c
+  for c in ${WITH_COMPONENTS//,/ }; do
+    case "$c" in
+      operations|teams-kit) ;;
+      *) echo "  Error: unknown --with component '$c' (use: operations, teams-kit)" >&2; exit 2 ;;
+    esac
+  done
+  kit_wants teams-kit && WITH_COMPONENTS="operations,$WITH_COMPONENTS"
+  if ! $GLOBAL_MODE && ! $UPDATE_MODE; then
+    echo "  Error: --with needs --global (birth) or --update (run in an existing Being's home)" >&2
+    exit 2
+  fi
+  if $UPDATE_MODE && ! $GLOBAL_MODE && [ ! -d ".beings" ]; then
+    echo "  Error: --update --with needs an existing Being; no .beings/ in $(pwd)" >&2
+    exit 2
+  fi
+  if [[ "$OWNER_NAME" == *$'\n'* ]]; then
+    echo "  Error: --owner must be one line" >&2
+    exit 2
+  fi
+  if $UPDATE_MODE && ! $GLOBAL_MODE && [ -z "$BEING_NAME" ]; then
+    # Never derived from the directory: it is the name people call the Being in chat.
+    if [ -f "ops/teams-kit/.env" ]; then
+      # shellcheck source=/dev/null
+      BEING_NAME="$(set -a; . "ops/teams-kit/.env" >/dev/null 2>&1; printf '%s' "${BEING_NAME:-}")"
+    fi
+    if [ -z "$BEING_NAME" ] && can_prompt && ! $YES_MODE; then
+      read_input "  Being name (the name people use for it, e.g. nova): " BEING_NAME
+    fi
+    if [ -z "$BEING_NAME" ]; then
+      echo "  Error: --update --with needs --name <name> (the Being's name, not the directory name)" >&2
+      exit 2
+    fi
+  fi
+  if ! $GLOBAL_MODE; then
+    BEING_NAME=$(echo "$BEING_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+  fi
+  if [[ -n "$BEING_NAME" && ! "$BEING_NAME" =~ ^[a-z][a-z0-9-]*$ ]]; then
+    echo "  Error: Being name must be lowercase letters, digits or dashes" >&2
+    exit 2
+  fi
+}
+
+# kit_add <repo path> <dest>: add if missing, filling {{BEING_NAME}} / {{OWNER_NAME}}.
+kit_add() {
+  local src="$1"
+  local dest="$2"
+  if [ -e "$dest" ]; then
+    KIT_KEPT=$((KIT_KEPT + 1))
+    return
+  fi
+  mkdir -p "$(dirname "$dest")"
+  local tmp; tmp="$(mktemp)"
+  fetch_or_copy_file "$src" "$tmp"
+  sed -e "s/{{BEING_NAME}}/$(sed_lit "$BEING_NAME")/g" -e "s/{{OWNER_NAME}}/$(sed_lit "$OWNER_NAME")/g" "$tmp" > "$dest"
+  rm -f "$tmp"
+  print_step "Added ${BOLD}${dest}${NC}"
+  KIT_ADDED=$((KIT_ADDED + 1))
+}
+
+kit_append_section() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if grep -q 'beings-kit:operations' "$file" 2>/dev/null; then
+    KIT_KEPT=$((KIT_KEPT + 1))
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  fetch_or_copy_file "templates/kit/OPERATIONS-SECTION.md" "$tmp"
+  cat "$tmp" >> "$file"
+  rm -f "$tmp"
+  print_step "Appended Operations Kit section to ${BOLD}${file}${NC}"
+}
+
+kit_ignore() {
+  local line="$1"
+  touch .gitignore
+  grep -qxF "$line" .gitignore || echo "$line" >> .gitignore
+}
+
+# Launcher: replace only the wrapper this run just created; a user's own launcher is kept.
+kit_launcher() {
+  local fresh="$1"
+  local launcher="bin/${BEING_NAME}"
+  if [ -e "$launcher" ] && grep -q 'launch_codex' "$launcher" 2>/dev/null; then
+    KIT_KEPT=$((KIT_KEPT + 1))
+  elif [ -e "$launcher" ] && $fresh; then
+    fetch_or_copy_file "templates/kit/bin/being" "$launcher"
+    chmod +x "$launcher"
+    print_step "Replaced ${BOLD}${launcher}${NC} with the multi-client launcher (Claude Code + Codex)"
+  elif [ -e "$launcher" ]; then
+    kit_add "templates/kit/bin/being" "${launcher}.multi"
+    chmod +x "${launcher}.multi"
+    print_info "${launcher} kept; review ${BOLD}${launcher}.multi${NC} and swap it in when ready"
+  else
+    kit_add "templates/kit/bin/being" "$launcher"
+    chmod +x "$launcher"
+  fi
+}
+
+# Teams kit: copy missing files; changed upstream files go to .kit-upgrade/ for review.
+kit_teams() {
+  local dst="ops/teams-kit"
+  local f tmp changed=0
+  mkdir -p "$dst/state"
+  for f in "${TEAMS_KIT_FILES[@]}" "${TEAMS_KIT_EXEC[@]}"; do
+    tmp="$(mktemp)"
+    fetch_or_copy_file "skills/teams-kit/$f" "$tmp"
+    if [ ! -e "$dst/$f" ]; then
+      mv "$tmp" "$dst/$f"
+      KIT_ADDED=$((KIT_ADDED + 1))
+    elif cmp -s "$tmp" "$dst/$f"; then
+      rm -f "$tmp"
+      KIT_KEPT=$((KIT_KEPT + 1))
+    else
+      mkdir -p "$dst/.kit-upgrade"
+      mv "$tmp" "$dst/.kit-upgrade/$f"
+      changed=$((changed + 1))
+    fi
+  done
+  for f in "${TEAMS_KIT_EXEC[@]}"; do
+    [ -f "$dst/$f" ] && chmod +x "$dst/$f"
+    [ -f "$dst/.kit-upgrade/$f" ] && chmod +x "$dst/.kit-upgrade/$f"
+  done
+  print_step "Teams kit in ${BOLD}${dst}/${NC}"
+  [ "$changed" -gt 0 ] && print_warn "${changed} kit file(s) changed upstream — new versions in ${BOLD}${dst}/.kit-upgrade/${NC} (yours untouched)"
+
+  if [ ! -f "$dst/.env" ]; then
+    # Single-quoted values: the file is sourced by bash, so spaces and quotes must survive.
+    local abs; abs="$(pwd -P)/$dst"
+    BK_NAME=$(shq "$BEING_NAME") BK_STATE=$(shq "$abs/state") BK_CACHE=$(shq "$abs/state/token-cache.json") BK_OWNER=$(shq "$OWNER_NAME") \
+    awk '/^BEING_NAME=/      { print "BEING_NAME=" ENVIRON["BK_NAME"]; next }
+         /^BEING_STATE_DIR=/ { print "BEING_STATE_DIR=" ENVIRON["BK_STATE"]; next }
+         /^BEING_CACHE=/     { print "BEING_CACHE=" ENVIRON["BK_CACHE"]; next }
+         /^OWNER_NAME=/      { print "OWNER_NAME=" ENVIRON["BK_OWNER"]; next }
+         { print }' "$dst/.env.example" > "$dst/.env"
+    chmod 600 "$dst/.env"
+    print_step "Created ${BOLD}${dst}/.env${NC} (0600, prefilled — fill the rest)"
+  else
+    # Merge: append settings that are new upstream (a changed .env.example is staged in .kit-upgrade/); existing values stay.
+    local missing example="$dst/.env.example"
+    [ -f "$dst/.kit-upgrade/.env.example" ] && example="$dst/.kit-upgrade/.env.example"
+    missing="$(awk -F= 'NR==FNR { if ($0 ~ /^[A-Z0-9_]+=/) have[$1]=1; next }
+                        /^[A-Z0-9_]+=/ && !($1 in have)' "$dst/.env" "$example")"
+    if [ -n "$missing" ]; then
+      printf '\n# Added by install.sh --update (kit v%s)\n%s\n' "$KIT_VERSION" "$missing" >> "$dst/.env"
+      print_step "Added new settings to ${BOLD}${dst}/.env${NC}: $(echo "$missing" | cut -d= -f1 | tr '\n' ' ')"
+    fi
+  fi
+  # Separate shell: errexit is ignored inside an if-condition subshell.
+  if ! bash -c 'set -euo pipefail; set -a; . "$1"' _ "$dst/.env" >/dev/null 2>&1; then
+    echo "  Error: $dst/.env does not source cleanly; fix it and re-run" >&2
+    exit 1
+  fi
+  kit_ignore "ops/teams-kit/.env"
+  kit_ignore "ops/teams-kit/state/"
+  kit_ignore "ops/teams-kit/node_modules/"
+  kit_ignore "ops/teams-kit/.kit-upgrade/"
+  command -v node &>/dev/null || print_warn "Node.js >= 20 not found — the Teams kit needs it"
+}
+
+# install_kit <fresh launcher?>: run in the Being's home after birth or update.
+install_kit() {
+  local fresh="$1"
+  echo ""
+  echo -e "  ${BOLD}🧰 Operations Kit${NC} ${DIM}(${WITH_COMPONENTS})${NC}\n"
+  local t
+  for t in "${KIT_TEMPLATES[@]}"; do
+    kit_add "templates/kit/$t" ".beings/$t"
+  done
+  mkdir -p .beings/memory
+  kit_launcher "$fresh"
+  kit_append_section "CLAUDE.md"
+  kit_append_section "AGENTS.md"
+  kit_wants teams-kit && kit_teams
+  echo "$KIT_VERSION" > .beings/.kit-version
+  print_step "Operations Kit v${KIT_VERSION}: added ${KIT_ADDED}, kept ${KIT_KEPT} existing"
+  print_info "Next: fill {{…}} placeholders in .beings/GUARDRAILS.md and AUTONOMY-MATRIX.md, review, commit"
+  if kit_wants teams-kit; then
+    print_info "Teams: cd ops/teams-kit && npm install, then follow its README.md (sign-in, .env, being-teams up)"
+  fi
+}
+
+# --check: report which kit pieces exist in the current Being home; changes nothing.
+kit_check() {
+  local f
+  local name="$BEING_NAME"
+  if [ -z "$name" ] && [ -f "ops/teams-kit/.env" ]; then
+    # shellcheck source=/dev/null
+    name="$(set -a; . "ops/teams-kit/.env" >/dev/null 2>&1; printf '%s' "${BEING_NAME:-}")"
+  fi
+  echo ""
+  echo -e "  ${BOLD}Beings Protocol check${NC} ${DIM}($(pwd))${NC}\n"
+  [ -d ".beings" ] || { print_warn "No .beings/ here — not a Being home"; return 1; }
+  print_info "protocol $(cat .beings/.protocol-version 2>/dev/null || echo unknown), kit $(cat .beings/.kit-version 2>/dev/null || echo 'not installed')"
+  local items=(.beings/GUARDRAILS.md .beings/AUTONOMY.md .beings/AUTONOMY-MATRIX.md .beings/JOB-CHECKLIST.md
+               .beings/MEMORY.md .beings/facts .beings/memory ops/teams-kit ops/teams-kit/.env)
+  [ -n "$name" ] && items+=("bin/$name")
+  for f in "${items[@]}"; do
+    if [ -e "$f" ]; then print_step "$f"; else print_warn "missing $f"; fi
+  done
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$f" ] || continue
+    if grep -q 'beings-kit:operations' "$f"; then print_step "$f kit section"; else print_warn "$f has no kit section"; fi
+  done
+  [ -d "ops/teams-kit/.kit-upgrade" ] && print_warn "ops/teams-kit/.kit-upgrade/ has newer kit files to review"
+  return 0
+}
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -1355,10 +1622,22 @@ create_global_being() {
 main() {
   # Parse arguments
   local next_is_name=false
+  local next_is_with=false
+  local next_is_owner=false
   for arg in "$@"; do
     if $next_is_name; then
       BEING_NAME="$arg"
       next_is_name=false
+      continue
+    fi
+    if $next_is_with; then
+      WITH_COMPONENTS="${WITH_COMPONENTS:+$WITH_COMPONENTS,}$arg"
+      next_is_with=false
+      continue
+    fi
+    if $next_is_owner; then
+      OWNER_NAME="$arg"
+      next_is_owner=false
       continue
     fi
     case "$arg" in
@@ -1368,8 +1647,22 @@ main() {
       --update)         UPDATE_MODE=true ;;
       --yes|-y)         YES_MODE=true ;;
       --no-memory)      NO_MEMORY_MODE=true ;;
+      --with)           next_is_with=true ;;
+      --with=*)         WITH_COMPONENTS="${WITH_COMPONENTS:+$WITH_COMPONENTS,}${arg#--with=}" ;;
+      --owner)          next_is_owner=true ;;
+      --owner=*)        OWNER_NAME="${arg#--owner=}" ;;
+      --check)          CHECK_MODE=true ;;
     esac
   done
+
+  if $CHECK_MODE; then
+    kit_check
+    exit $?
+  fi
+  # Fail before writing anything; --global validates once its name is known.
+  if [ -n "$WITH_COMPONENTS" ] && ! $GLOBAL_MODE; then
+    kit_validate
+  fi
 
   # === GLOBAL BEING MODE ===
   if $GLOBAL_MODE; then
@@ -1388,6 +1681,14 @@ main() {
     fi
     # Lowercase and strip spaces (tr for bash 3.2 compat)
     BEING_NAME=$(echo "$BEING_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+    if [ -n "$WITH_COMPONENTS" ]; then
+      kit_validate
+      local had_launcher=false
+      [ -e "$HOME/beings/${BEING_NAME}/bin/${BEING_NAME}" ] && had_launcher=true
+      create_global_being "$BEING_NAME"
+      if $had_launcher; then install_kit false; else install_kit true; fi
+      exit 0
+    fi
     create_global_being "$BEING_NAME"
     exit 0
   fi
@@ -1428,6 +1729,9 @@ main() {
 
     # Step 6: Offer code intelligence (if not already set up)
     setup_code_intelligence "${detected_tools:-}"
+
+    # Step 7: Opt-in components (--with)
+    [ -n "$WITH_COMPONENTS" ] && install_kit false
 
     # Done
     print_update_summary

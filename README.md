@@ -210,6 +210,37 @@ Beings can have optional skills that extend their capabilities:
 |-------|-------------|
 | **[Memory](skills/memory/)** | Markdown-native persistent memory via basic-memory — git-syncable, Obsidian-compatible |
 | **[Evolution](skills/evolution/)** | Self-modification via Claude Code CLI — the Being improves its own code via PRs |
+| **[Teams Kit](skills/teams-kit/)** | Its own Microsoft Teams + Outlook identity: watcher, triage → work → voice, scoped replies, background jobs, owner-approved drafts |
+
+## 🧰 Operations Kit (Optional)
+
+Everything a Being needs once it works with a team:
+
+- **Guardrails + authority matrix** — short override rules, and who may trigger what through which path
+- **Memory that scales** — daily logs, one fact per file with a one-line index, knowledge graph for the long tail
+- **Corrections become rules** — every correction is written down in the same turn; mechanical failures get a guard in code
+- **Background jobs** — long work runs detached, is verified, and reports back; blockers escalate after two failures
+- **Model routing** — fast model for triage and wording, strong model for work and big jobs, mid model for chores
+- **Multi-client launcher** — `<name> claude` / `<name> codex`, plus the daily session
+
+Same installer, same curl command, one opt-in flag (`--with operations` or `--with teams-kit`):
+
+```bash
+# Birth a Global Being with the kit
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --global --name nova --owner "Sam Lee" --with teams-kit --yes
+
+# Add the kit to an existing Being (run in its home; never overwrites)
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --update --name nova --with teams-kit --yes
+
+# See what a Being home has
+curl -fsSL https://raw.githubusercontent.com/VeltriaAI/beings-protocol/main/install.sh | bash -s -- --check
+```
+
+Without `--with`, `install.sh` behaves exactly as before.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how it fits together, with diagrams),
+[docs/OPERATIONS_KIT.md](docs/OPERATIONS_KIT.md), [docs/MODEL_ROUTING.md](docs/MODEL_ROUTING.md) and
+[docs/BIRTH_AND_UPGRADE.md](docs/BIRTH_AND_UPGRADE.md).
 
 ## Before → After
 
