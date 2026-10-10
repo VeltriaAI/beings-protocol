@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # being-job: long work that must outlive a handler reply; on finish it wakes the daily session to verify.
-# Usage: README.md "Script reference". A job inherits the caller's send grant scope (scope.mjs).
+# Usage: README.md "Script reference". A job inherits the caller's send grant scope (scope.mjs), and with it the lane:
+# a job from a teammate chat runs behind the same fence and reports back into that chat's session.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"   # cron/systemd start with a bare PATH
 KIT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -13,12 +14,17 @@ KREL=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]
 mkdir -p "$JOBS"
 
 json_get() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' "$1" "$2"; }
+lane_of_scope() { if [[ $1 == chats:?* ]]; then local c=${1#chats:}; echo "team:${c%%,*}"; else echo owner; fi; }
+mine() {   # a teammate-chat caller sees only the jobs its own chat started
+  local me; me=$(lane_of_scope "$(node "$KIT/scope.mjs" show 2>/dev/null)")
+  [[ $me == owner ]] || [[ -f "$1" && "$(lane_of_scope "$(json_get "$1" scope)")" == "$me" ]]
+}
 
 start_job() {   # $1 kind, $2 name, $3 notify chat, $4 model, $5 network (0|1), rest = payload
   local kind=$1 name=$2 notify=$3 model=$4 net=$5; shift 5
   local id; id="$(date +%m%d-%H%M%S)-$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '-' | cut -c1-24)"
   local scope; scope=$(node "$KIT/scope.mjs" show)
-  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "$scope" "${BEING_JOB_ADD_DIRS:-}" "$model" "$BEING_NAME" "$net" "$@" <<'PY'
+  python3 - "$JOBS/$id.json" "$id" "$kind" "$name" "$notify" "$scope" "${BEING_JOB_ADD_DIRS:-}" "$model" "${BEING_NAME:?}" "$net" "$@" <<'PY'
 import json,sys,datetime,uuid
 f,id_,kind,name,notify,scope,add_dirs,model,being,net,*payload=sys.argv[1:]
 sid=str(uuid.uuid5(uuid.NAMESPACE_URL,f"being-job/{being}/{id_}")) if kind=="agent" else ""
@@ -57,11 +63,22 @@ case "${1:-list}" in
     export BEING_SEND_TOKEN; BEING_SEND_TOKEN=$(node "$KIT/scope.mjs" mint "$(json_get "$jf" scope)" 48)
     export BEING_VOICE=fast
     kind=$(json_get "$jf" kind)
+    export BEING_LANE; BEING_LANE=$(lane_of_scope "$(json_get "$jf" scope)")
+    perms=(--dangerously-skip-permissions); fence=""
+    if [[ $BEING_LANE != owner ]]; then
+      export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+      perms=(--dangerously-skip-permissions --settings "$(python3 "$KIT/team-fence.py" --settings)")
+      [[ "${BEING_SINGLE_USER_ACK:-0}" == 1 ]] && perms=(--permission-mode dontAsk --settings "$(python3 "$KIT/team-fence.py" --settings)" \
+        --allowedTools "${BEING_TEAM_JOB_TOOLS:-Read,Grep,Glob,Edit,Write,WebFetch,WebSearch,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash($KREL/being-blocker:*)}")
+      fence="- Started from a teammate chat: never open .beings-local/, credential stores, any .env, other sessions, kit state or
+  owner tools, and never use or hint at anything personal about the owner or anyone else."
+    fi
     mapfile -t payload < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["payload"]))' "$jf")
     set +e
     if [[ $kind == agent ]]; then
-      (cd "$WORKSPACE" && claude -p --dangerously-skip-permissions --model "$(json_get "$jf" model)" --session-id "$(json_get "$jf" session_id)" \
+      (cd "$WORKSPACE" && claude -p "${perms[@]}" --model "$(json_get "$jf" model)" --session-id "$(json_get "$jf" session_id)" \
         "$RULES
+$fence
 RESULT file: $result
 Task:
 ${payload[*]}" </dev/null) >"$log" 2>&1
@@ -72,6 +89,7 @@ ${payload[*]}" </dev/null) >"$log" 2>&1
       (cd "$WORKSPACE" && codex exec --json --skip-git-repo-check -C "$WORKSPACE" -s workspace-write "${extra[@]}" \
         -c "sandbox_workspace_write.network_access=$net" -c model_reasoning_effort=medium -o "$result" \
         "$RULES (Your final message is written to the RESULT file for you.)
+$fence
 Task:
 ${payload[*]}" </dev/null) >"$JOBS/$id.events.jsonl" 2>"$log"
     else
@@ -96,10 +114,15 @@ open(q,"a").write(json.dumps(ev)+"\n")
 PY
     setsid "$KIT/being-handle" work </dev/null >/dev/null 2>&1 & ;;
   list)
-    find "$JOBS" -maxdepth 1 -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -20 | cut -d' ' -f2- | while read -r f; do
+    n=0
+    find "$JOBS" -maxdepth 1 -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -200 | cut -d' ' -f2- | while read -r f; do
+      mine "$f" || continue
+      n=$((n + 1)); (( n > 20 )) && break
       python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("%-34s %-9s %-5s %s  started %s%s" % (d["id"], d["status"], d["kind"], d["name"], d["started"][11:16], ("  exit %s" % d["exit"]) if "exit" in d else ""))' "$f"
     done ;;
-  status) cat "$JOBS/${2:?id}.json"; if [[ -f "$JOBS/$2.result.md" ]]; then echo "--- result"; cat "$JOBS/$2.result.md"; fi ;;
-  log) tail -n "${3:-40}" "$JOBS/${2:?id}.log" ;;
+  status) mine "$JOBS/${2:?id}.json" || { echo "blocked: job $2 belongs to another conversation" >&2; exit 3; }
+    cat "$JOBS/$2.json"; if [[ -f "$JOBS/$2.result.md" ]]; then echo "--- result"; cat "$JOBS/$2.result.md"; fi ;;
+  log) mine "$JOBS/${2:?id}.json" || { echo "blocked: job $2 belongs to another conversation" >&2; exit 3; }
+    tail -n "${3:-40}" "$JOBS/$2.log" ;;
   *) echo "usage: being-job agent|codex|run <name> [--small] [--network] --notify <chatId> ... | list | status <id> | log <id> [n]" >&2; exit 2 ;;
 esac

@@ -60,7 +60,7 @@ flowchart LR
 | Teams polling | Every **30 s** over Microsoft Graph; the watermark advances only after a clean sweep |
 | Presence | Refreshed every ~5 min (expires in 15), so the Being shows Available only while the watcher runs |
 | Watchdog | Every ~2 min; one alert if a job or run shows no activity for **10 min** (`BEING_STALL_MIN`) |
-| Sessions | **One fast session + one work session per date**, named `YYYY-MM-DD`; every message that day resumes them |
+| Sessions | **One fast + one work session per date and lane**: the owner's pair is `YYYY-MM-DD`; each teammate chat gets its own pair; a job result resumes the pair of the lane that started it |
 | Pipeline | **Triage** (fast model, read-only) → **Work** (strong model) → **Voice** (fast model rewords outgoing messages) |
 | Lanes | owner · teammates · delegate · job, each with its own send scope enforced in code |
 | Long work | `being-job` detached workers (Claude Code or Codex), verified by the daily session before reporting |
@@ -107,6 +107,13 @@ One long-running loop (optionally a systemd user unit, so it survives reboots) t
   acknowledgement is fast.
 
 A `state/STANDBY` marker makes a second host read-only (no loop, no sends) during a machine cutover.
+
+**Polling or webhooks.** The kit polls (simple, no public endpoint, nothing lost while the host sleeps). A host that needs
+lower latency can add a Graph change-notification subscription in front of the same queue, if it keeps these rules:
+echo `validationToken` on the handshake; check `clientState` on every notification; handle lifecycle events
+(`reauthorizationRequired`, `missed`) and renew before expiry; keep the payload to chat and message ids and fetch the text
+with the Being's own token; a receiver exposed to the internet accepts POST only, on its notification paths only. Keep the
+poll running as the catch-up path after downtime.
 
 ### Responding: `being-handle` in three stages
 
@@ -178,12 +185,15 @@ consistent voice, while the work model focuses on getting the content right.
 
 ## 3. Sessions and context
 
-Every message on a given date lands in the **same two sessions**:
+Every message on a given date lands in the **two sessions of its lane**:
 
-- **Work session** (Claude Code): its id is a deterministic UUIDv5 of the Being's name and the date, so any script or human
-  can find it. Created on the first message, resumed for every later one, named `YYYY-MM-DD`.
-- **Fast session** (Codex or Claude): the Codex thread id is stored per date on first use; a Claude fast session uses a
-  UUIDv5 of the date like the work session.
+- **Work session** (Claude Code): its id is a deterministic UUIDv5 of the Being's name, the date and, for a teammate chat,
+  that chat (`being-daily/<name>/<date>/team:<chatId>`), so any script or human can find it. Created on the first message,
+  resumed for every later one. The owner's lane keeps the plain `being-daily/<name>/<date>` id that `<name> claude today` opens.
+- **Fast session** (Codex or Claude): the Codex thread id is stored per date and lane on first use; a Claude fast session
+  uses a UUIDv5 of the date and lane like the work session.
+- **Never across lanes**: a teammate's run never resumes a session that holds the owner's day, or another chat's. A job
+  result resumes the session of the lane that started the job (its grant scope says which).
 
 Why one session a day:
 
@@ -220,6 +230,11 @@ off, blockers, "append a short entry to today's log").
 **Jobs get their own sessions.** Each `being-job` runs in its own named session, so heavy work never bloats the daily
 session. The daily session sees only the **result event**, and verifies it.
 
+**Teammate runs are fenced.** They start with auto memory off and a PreToolUse hook (`team-fence.py`) that refuses the
+owner's private files (`.beings-local/`), credential stores, reading any `.env`, other sessions' transcripts, kit state and
+the owner tools; their fast sessions run in an empty directory, and their live state covers only their own chat. On a
+one-user host this stops mistakes and casual injection, not a determined one (GUARDRAILS.md, Threat model).
+
 ## 4. Lanes and send-scope enforcement
 
 ```mermaid
@@ -229,7 +244,7 @@ flowchart TB
   SPLIT -->|owner, in their 1:1| OL["owner lane: full scope"]
   SPLIT -->|sent to the owner elsewhere| DL["delegate lane: owner-only, log or draft"]
   SPLIT -->|teammate| TL["teammates lane: chats = the chats they wrote in"]
-  OL --> RUN["Separate work run per lane"]
+  OL --> RUN["Separate work run and session per lane (one per teammate chat)"]
   TL --> RUN
   DL --> RUN
   JL --> RUN
@@ -430,7 +445,7 @@ flowchart LR
 
 The kit runs one Being on one host, signed in as itself, serving one owner and the teammates who message it.
 
-**Portable as-is:** protocol files in git; triage → work → voice; one session per day per client; lanes with send scopes
+**Portable as-is:** protocol files in git; triage → work → voice; one session per day per client and lane; lanes with send scopes
 in code; jobs that outlive a reply and are verified; blocker escalation; an activity + CPU watchdog; corrections → rules →
 mechanisms; deterministic approvals for anything sent on a human's behalf.
 

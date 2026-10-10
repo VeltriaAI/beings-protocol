@@ -1091,7 +1091,7 @@ TEAMS_KIT_FILES=(
 TEAMS_KIT_EXEC=(
   approve.mjs being-blocker being-handle being-job being-status being-teams being-watchdog draft-for-owner.mjs
   mail.mjs owner-mail owner-read teams-ack.mjs teams-detect.mjs teams-login-device.mjs teams-presence.mjs
-  teams-read.mjs teams-send-dm.mjs
+  teams-read.mjs teams-send-dm.mjs teams-fetch-attachment.mjs team-fence.py
 )
 KIT_ADDED=0
 KIT_KEPT=0
@@ -1124,6 +1124,18 @@ kit_validate() {
     esac
   done
   kit_wants teams-kit && WITH_COMPONENTS="operations,$WITH_COMPONENTS"
+  if kit_wants teams-kit; then
+    # The Teams kit runner and handler are Linux scripts (flock, setsid, GNU find/readlink, systemd user units).
+    local t missing=""
+    for t in flock setsid python3; do command -v "$t" >/dev/null 2>&1 || missing="$missing $t"; done
+    if [ -n "$missing" ]; then
+      echo "  Error: --with teams-kit needs a Linux host; missing:$missing (skills/teams-kit/README.md, Set up)" >&2
+      exit 2
+    fi
+    [ "$(uname -s)" = Linux ] || print_warn "teams-kit is tested on Linux only; on $(uname -s) parts may fail quietly"
+    command -v node >/dev/null 2>&1 || print_warn "teams-kit needs Node.js 20+ before 'npm install'"
+    command -v systemctl >/dev/null 2>&1 || print_warn "no systemctl: 'being-teams autostart' will not work on this host"
+  fi
   if ! $GLOBAL_MODE && ! $UPDATE_MODE; then
     echo "  Error: --with needs --global (birth) or --update (run in an existing Being's home)" >&2
     exit 2

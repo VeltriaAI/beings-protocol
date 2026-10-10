@@ -123,9 +123,9 @@ case "${1:-status}" in
     echo "watermark: teams $(cat "$WM" 2>/dev/null || echo none) · mail $(cat "$MWM" 2>/dev/null || echo none)"
     (cd "$KIT" && echo "presence: $(node teams-presence.mjs status 2>/dev/null || echo unknown)") ;;
   doctor)   # how far the guarantees in GUARDRAILS.md "Threat model" hold on this host; exit 1 on any FAIL
-    python3 - "$KIT" "$STATE" "${BEING_CACHE:-}" "${OWNER_CACHE:-}" "${BEING_MODEL_USER:-}" "${BEING_OWNER_DELEGATE:-0}" <<'PY' ;;
+    python3 - "$KIT" "$STATE" "${BEING_CACHE:-}" "${OWNER_CACHE:-}" "${BEING_MODEL_USER:-}" "${BEING_OWNER_DELEGATE:-0}" "${BEING_SINGLE_USER_ACK:-0}" <<'PY' ;;
 import os,sys,stat,pwd,shutil,subprocess
-kit,state,bc,oc,model,deleg=sys.argv[1:7]; me=pwd.getpwuid(os.getuid()).pw_name; bad=0
+kit,state,bc,oc,model,deleg,ack=sys.argv[1:8]; me=pwd.getpwuid(os.getuid()).pw_name; bad=0
 key=os.path.join(state,"handler.key")
 def mode(p): return stat.S_IMODE(os.stat(p).st_mode)
 def fail(msg):
@@ -135,10 +135,17 @@ for label,p in (("kit .env",os.path.join(kit,".env")),("Being token cache",bc),(
     if mode(p)&0o077: fail(f"{label}: mode {oct(mode(p))} (chmod 600)")
     else: print(f"  ok   {label}: mode {oct(mode(p))}")
 owner_on=deleg=="1" or bool(oc and os.path.exists(oc))
+if (not model or model==me) and ack=="1" and not owner_on:
+    # One-user host by choice (no second user possible): an honest warning, not a permanent failure.
+    print(f"  WARN isolation: one-user host acknowledged (BEING_SINGLE_USER_ACK=1); the model runs as {me}.")
+    print("       Scopes, the fence and approvals stop mistakes only; teammate lanes run without skipped permissions")
+    print("       (BEING_TEAM_TOOLS allowlist) and behind team-fence.py. GUARDRAILS.md, Threat model.")
+    sys.exit(1 if bad else 0)
 if not model or model==me:
     fail(f"isolation: the model runs as {me}, the user that holds .env, the token caches and the handler key.")
     print("       Scopes and approvals stop mistakes only, not a prompt-injected run (GUARDRAILS.md, Threat model).")
     fail("minting: any run can read state/handler.key and mint itself a full grant; this cannot be enforced on one user.")
+    print("       No way to add a user? Set BEING_SINGLE_USER_ACK=1 (owner sign-in off) to accept this, see README.")
     if owner_on:
         fail("owner sign-in on a same-user host: a run can read the owner's token and post as the owner.")
         print("       Set BEING_OWNER_DELEGATE=0 and delete OWNER_CACHE, or move to the two-user layout.")

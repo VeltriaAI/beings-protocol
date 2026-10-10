@@ -17,6 +17,6 @@ Guidelines:
   silently move work to a model you did not choose. When one model hits a limit, switch the env var, not the code.
 - **Fast models never act.** Triage and voice run read-only and return JSON; scripts apply their decisions.
 - **Guard the fast model's output.** The voice pass may not drop a number or link; if it does, the original text is sent.
-- **One session per day per client** keeps context warm without reloading the whole history for each message.
+- **One session per day per client and lane** (the owner's, and one per teammate chat) keeps context warm without reloading the whole history for each message.
 - Use model aliases (`opus`, `sonnet`, `haiku`) or full ids as your client accepts; check with a one-line run before relying
   on a new id.

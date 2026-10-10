@@ -5,7 +5,7 @@ description: Microsoft Teams + Outlook pipeline for a Being with its own M365 ac
 author: Beings Protocol
 scope: claude-code (work session, agent jobs) + codex or claude (triage/voice) + codex (optional jobs)
 dependencies:
-  - Node.js >= 20, Python >= 3.10, bash, flock (util-linux), Linux /proc (watchdog)
+  - Linux host: Node.js >= 20, Python >= 3.10, bash, flock and setsid (util-linux), GNU find/readlink, /proc (watchdog)
   - "@azure/msal-node" (npm install)
   - Claude Code CLI (`claude`); Codex CLI (`codex`) when BEING_FAST_CLIENT=codex or for codex jobs
   - An Entra app registration (public client, delegated permissions) and a licensed M365 account for the Being

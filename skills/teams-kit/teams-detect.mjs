@@ -8,10 +8,16 @@ if (!since) fail('usage: teams-detect.mjs <ISO8601-watermark>');
 const { g, me } = await connect({ upn: need('BEING_UPN'), scopes: ['Chat.Read', 'User.Read'] });
 const SELF = me.id;
 const OWNER = process.env.OWNER_OID || '';
-const NAME_RE = new RegExp(`\\b${need('BEING_NAME').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const list = (k) => (process.env[k] || '').split(',').map((x) => x.trim()).filter(Boolean);
+// Name or alias as a word wakes the Being; stop-list phrases ("Nova Scotia") are removed first (README "Detection limits").
+const NAME_RE = new RegExp(`\\b(?:${[need('BEING_NAME'), ...list('BEING_NAME_ALIASES')].map(esc).join('|')})\\b`, 'i');
+const STOP = list('BEING_NAME_STOPLIST').map((x) => new RegExp(esc(x), 'gi'));
+const named = (t) => NAME_RE.test(STOP.reduce((s, re) => s.replace(re, ' '), t));
 // Sweep limits (README "Detection limits"): most recently active chats first, newest messages per chat.
 const int = (k, d, max) => Math.min(max, Math.max(1, parseInt(process.env[k] || '', 10) || d));
 const MAX_CHATS = int('BEING_DETECT_CHATS', 50, 1000), PER_CHAT = int('BEING_DETECT_MESSAGES', 8, 50);
+const MAX_PAGES = int('BEING_DETECT_PAGES', 5, 20);
 const EMO = { like: '👍', heart: '❤️', laugh: '😆', surprised: '😮', sad: '😢', angry: '😡' };
 
 const members = new Map();   // chatId -> Map(userId -> displayName)
@@ -37,9 +43,14 @@ try {
   // Graph has no createdDateTime filter for chat messages: fetch the newest few and compare locally.
   await Promise.all(chats.map(async (c) => {
     try {
-      const page = (await g(`/chats/${c.id}/messages?$top=${PER_CHAT}`)).value ?? [];
-      if (page.length === PER_CHAT && page.every((m) => (m.createdDateTime || '') > since)) {
-        console.error(`chat ${c.id.slice(0, 30)}: ${PER_CHAT}+ new messages since the last sweep; older ones may be missed (raise BEING_DETECT_MESSAGES)`);
+      // A burst can fill the first page: read further back until a message at or before the watermark (bounded).
+      let r = await g(`/chats/${c.id}/messages?$top=${PER_CHAT}`);
+      const page = [...(r.value ?? [])];
+      for (let n = 1; n < MAX_PAGES && r['@odata.nextLink'] && page.length && page.every((m) => (m.createdDateTime || '') > since); n++) {
+        r = await g(r['@odata.nextLink']); page.push(...(r.value ?? []));
+      }
+      if (r['@odata.nextLink'] && page.length && page.every((m) => (m.createdDateTime || '') > since)) {
+        console.error(`chat ${c.id.slice(0, 30)}: ${page.length}+ new messages since the last sweep; older ones may be missed (raise BEING_DETECT_PAGES)`);
       }
       for (const m of page) {
         // Reactions to the Being's own messages count as input (a 👍 on a question is an answer).
@@ -63,7 +74,7 @@ try {
           ...[...html.matchAll(/<img[^>]+src="([^"]+)"/gi)].map((x) => ({ kind: 'image', name: 'inline image', url: x[1] })),
         ];
         // Wake the model only for messages FOR the Being: a 1:1, an @mention, or its name in the text.
-        const addressed = c.chatType === 'oneOnOne' || m.mentions?.some((x) => x.mentioned?.user?.id === SELF) || NAME_RE.test(text);
+        const addressed = c.chatType === 'oneOnOne' || m.mentions?.some((x) => x.mentioned?.user?.id === SELF) || named(text);
         if (!addressed) continue;
         hits.push({ addressedBy: c.chatType === 'oneOnOne' ? 'direct-chat' : 'named-or-mentioned',
           chatId: c.id, topic: c.topic ?? '(direct)', chatType: c.chatType, from: m.from.user.displayName ?? 'unknown',

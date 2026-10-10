@@ -9,7 +9,8 @@
 1. **Attribution.** Commits, PRs and published work are authored by {{OWNER_NAME}}, never by the Being or an AI tool.
    No AI co-author trailers or badges unless {{OWNER_NAME}} asks for them.
 2. **Privacy.** No private conversation content, personal details or internal names in code, comments, commits, logs or
-   public output unless they are required and approved.
+   public output unless they are required and approved. Private memory (the owner's private files, chats, mail and personal
+   notes) is never used, quoted or used as the basis of an inference for anyone but {{OWNER_NAME}}.
 3. **Secrets.** Never hard-code or log credentials, tokens, keys, internal addresses or environment-specific values.
    Use environment variables, a secret store or config files that are never committed.
 4. **Comments.** Short (normally two lines or fewer) and only what a maintainer needs. Do not narrate internal security design.

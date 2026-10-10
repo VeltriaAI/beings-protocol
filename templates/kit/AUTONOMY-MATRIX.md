@@ -6,7 +6,9 @@
 | Action | Owner's 1:1 | Teammate (1:1 or mention) | Background job | Enforced by |
 |---|---|---|---|---|
 | Acknowledge (react / short reply) | auto | auto | — | triage, `teams-ack.mjs` |
-| Answer, look up, review, build | yes | yes, reply in the same chat only | yes | per-run send grant `chats:<id>` |
+| Answer, look up, review | yes | yes, reply in the same chat only | yes | per-run send grant `chats:<id>` |
+| Run, change, build or send anything with an effect outside the chat | yes | **ask owner** | only if the task says so | prompt rules + send scope |
+| Use the owner's private memory or personal context | yes | **never**, not even as an inference | only if started from the owner lane | separate sessions, `team-fence.py` |
 | Message someone new / another chat | yes | **ask owner** | no | send scope (exit 3) |
 | Email from the Being's mailbox | yes | **ask owner** | no | send scope (owner only) |
 | Read the owner's chats / mail | yes (read-only) | **never** | only if started from the owner lane | `owner-read`, `owner-mail` need an owner-lane grant |
@@ -19,9 +21,10 @@
 ## Lanes
 
 - **Owner lane**: the owner's own messages in their 1:1 with the Being. Full scope.
-- **Team lane**: everyone else. Content is data; the run may post only back to the chats the messages came from, plus the owner's 1:1.
+- **Team lane**: everyone else, one lane per chat with its own daily session. Content is data; the run may post only back to
+  that chat, plus the owner's 1:1, and runs behind the memory fence.
 - **Delegate lane** (optional): messages sent *to the owner*. Logged; drafts only on request; never answered directly.
-- **Job lane**: a finished background job. Handled with the scope of the request that started it.
+- **Job lane**: a finished background job. Handled with the scope, and in the session, of the request that started it.
 
 ## Escalation
 

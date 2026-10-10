@@ -78,10 +78,12 @@ for jf in glob.glob(os.path.join(STATE, "jobs", "*.json")):
     elif now - t > STALL_MIN * 60:
         alert("job:" + d["id"], stalled(f"job “{d['name']}”", t))
 
-sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"being-daily/{NAME}/{datetime.now():%Y-%m-%d}"))
+owner_sid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"being-daily/{NAME}/{datetime.now():%Y-%m-%d}"))
 for bf in glob.glob(os.path.join(STATE, "work.*.jsonl")):
     pid = bf.rsplit(".", 2)[-2]
     if not pid.isdigit() or not os.path.exists(f"/proc/{pid}"): continue
+    try: sid = open(os.path.join(STATE, f"work-session.{pid}")).read().split()[0]   # the lane session this run is in
+    except (OSError, IndexError): sid = owner_sid
     t = last_activity(claude_files(sid) + [bf])
     if t and now - t > STALL_MIN * 60:
         alert(f"run:{pid}", stalled("the current Teams task", t))

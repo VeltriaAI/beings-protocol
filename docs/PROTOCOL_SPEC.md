@@ -471,7 +471,7 @@ Current version: **0.2.1**
 
 **Unreleased**
 - **Operations Kit** (optional): `GUARDRAILS.md`, `AUTONOMY-MATRIX.md`, `JOB-CHECKLIST.md` and one-fact memory templates; multi-client launcher; model-routing guide; "corrections become rules" and "fix the mechanism" patterns (CI cancel guard, daily batch branch).
-- **Teams kit skill** (`skills/teams-kit/`): Graph-polling watcher, triage → work → voice handler with one session per day per client, lanes with enforced send scopes, background jobs with verification, blocker, watchdog, owner-approved drafts, read-only owner views, mail and presence. Configured entirely by `.env`.
+- **Teams kit skill** (`skills/teams-kit/`): Graph-polling watcher, triage → work → voice handler with one session per day per client and lane (owner, each teammate chat), lanes with enforced send scopes, background jobs with verification, blocker, watchdog, owner-approved drafts, read-only owner views, mail and presence. Configured entirely by `.env`.
 - **`install.sh`**: opt-in `--with operations|teams-kit` (with `--global` or `--update`), `--owner`, `--check`; `--name` names the Being on `--update --with`. Without `--with`, behaviour is unchanged. `BEINGS_BASE_URL` points a curl install at a fork or branch.
 
 **v0.3.0 — 2026-04-27**

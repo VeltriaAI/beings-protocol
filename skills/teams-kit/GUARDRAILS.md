@@ -18,8 +18,17 @@ Copy into the Being's home and tighten it. Every rule below is enforced in code 
 | Message to the owner (delegate lane, opt-in: `BEING_OWNER_DELEGATE=1`) | `owner-only` | the owner's 1:1 (drafts) |
 | Finished background job | the scope of the request that started it | same as that request |
 
-Lanes run as separate model calls, so a teammate's message never runs with the owner's scope. Triage and teammate work
-both run one model call per chat, so one person's message never shapes what is sent to another.
+Lanes run as separate model calls **in separate sessions**: the owner's lane has its own daily work and fast session, and
+every teammate chat gets its own pair for the day, so a teammate's run never resumes a session holding the owner's day or
+another chat's. A finished job resumes the session of the lane that started it. Triage and voice are one call per chat in
+that lane's fast session, and a teammate chat's triage sees only its own live state (`being-status --chat`).
+
+**Teammate memory fence.** Private memory is never used, quoted or used as the basis of an inference for anyone but the
+owner ("they've had a lot on" is a leak). Teammate runs and the jobs they start run with Claude Code auto memory off and the
+`team-fence.py` PreToolUse hook, which refuses `.beings-local/`, credential stores (`~/.config`, `~/.ssh`, ...), reading any
+`.env`, other sessions (`~/.claude/projects`, `~/.codex`), kit `state/` except the lane's own jobs, and the owner tools;
+`BEING_FENCE_DENY` adds paths. Teammates get answers, lookups and reviews; anything with a side effect outside their chat
+needs the owner's OK first.
 
 The scope is not an environment variable the run can edit. The handler mints an opaque per-run grant (`scope.mjs`), stores
 its hash, scope and an HMAC under `state/grants/`, and hands the run the token in `BEING_SEND_TOKEN`. Senders look the scope
@@ -47,9 +56,13 @@ disk, never from the run's environment. Whoever can read that key can mint any s
 | Owner's chats/mail readable only under a full or owner-only grant | `owner-read`, `owner-mail` |
 | Grants need the handler key's HMAC; a forged or edited grant file is owner-only | `scope.mjs` |
 | Triage and voice: no file tools (Claude `--tools ""`), run in an empty directory | `being-handle fast_daily` |
+| Sessions per lane: owner, each teammate chat, and job results back into the lane that started them | `being-handle`, `being-job` |
+| Teammate runs: auto memory off, private paths refused by a hook, own jobs only | `team-fence.py`, `being-job` |
+| Teammate triage sees only its own chat's live state | `being-status --chat` |
+| Attachments are fetched only from Microsoft Graph / SharePoint hosts; unshared files exit 3 | `teams-fetch-attachment.mjs` |
 | Codex jobs have no network unless started with `--network` | `being-job` |
 | Sending as the owner: see below | `draft-for-owner.mjs`, `approve.mjs` |
-| Voice pass may not drop a number or link (falls back to the original text) | `being-handle voice_flush` |
+| Voice pass may not drop a number, link, negation or condition (falls back to the original text) | `being-handle voice_lane` |
 | Failed work kept for retry, never dropped | `state/failed.jsonl` |
 | Standby host never sends | `state/STANDBY` |
 
@@ -78,6 +91,7 @@ prompt-injected run, the **two-user layout is required**. `being-teams doctor` f
 | Prompt-injected run with shell access reads a token cache and calls Graph directly (incl. posting "send Dn" as the owner) | **not prevented** | prevented: caches, `.env` and `state/` are unreadable to the model user |
 | Prompt-injected run reads `state/handler.key` and mints itself a full grant, or writes grant files | **not prevented** | prevented: key and `state/` are kit-user only |
 | Prompt-injected run edits kit scripts | **not prevented** | prevented if the kit directory is not writable by the model user |
+| Teammate run reaches the owner's day or private memory | separate sessions + fence stop mistakes; a determined run can bypass the hook | same, plus kit files out of reach (the workspace stays readable) |
 
 Work runs use a shell with permissions skipped (`claude -p --dangerously-skip-permissions`). With one OS user, the owner
 guard, scopes and approval checks stop mistakes and casual injection, **not** a determined injection: the tokens and the
@@ -87,3 +101,9 @@ one OS user and the model clients as another (`BEING_MODEL_USER`); the model rea
 `sudo -u <kit user>` rule for the send scripts, passing `BEING_SEND_TOKEN`, never `scope.mjs`. That layout is host setup,
 not automated by this kit yet. Until then keep the owner sign-in **off** (`BEING_OWNER_DELEGATE=0`, no `OWNER_CACHE`
 file): drafts still reach the owner, who sends them by hand.
+
+**Getting there at birth.** The second user needs an admin once: `sudo useradd -m <being>-model`, the sudo rule for the send
+scripts, and `BEING_MODEL_USER=<being>-model` in `.env`. A Being that cannot get that (no sudo, no admin) sets
+`BEING_SINGLE_USER_ACK=1` with the owner sign-in off: doctor then warns instead of failing, and teammate lanes run **without**
+skipped permissions, limited to the `BEING_TEAM_TOOLS` allowlist (read tools, the kit senders, read-only git/gh) on top of
+the fence. Owner-lane runs are unchanged. The guarantees stay "mistakes only".
